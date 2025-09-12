@@ -6,18 +6,29 @@
 credentials/
 tokens/
 *.json
+# But allow config JSON files
+!config/*.json
 
 # Logs
 logs/
 *.log
 
 # Generated content
-storage/
+storage/*/
+storage/*/*/
+storage/*/*/*/
+# But keep directory structure
+!storage/
+!storage/*/
+!storage/*/*/
+# Ignore all media files
 *.mp4
 *.jpg
 *.png
 *.wav
 *.mp3
+# But allow .gitkeep files to maintain directory structure
+!**/.gitkeep
 
 # Python
 __pycache__/
@@ -64,3 +75,27 @@ temp-audio.m4a
 # Test outputs
 test_video.mp4
 test_audio.mp3
+
+# Additional security
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Windows specific
+desktop.ini
+$RECYCLE.BIN/
+
+# macOS specific
+.AppleDouble
+.LSOverride
