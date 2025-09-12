@@ -1,0 +1,49 @@
+channel_name: "Meme/Entertainment"
+settings:
+  visual_source: "stock"    # Real memes and content preferred
+  voiceover: false          # No voiceover for memes
+  voice: null
+  music: "funny_background"
+  schedule: "2_per_day"
+  video_duration: "15-45"   # Shorter for memes
+  quality_check: true
+  auto_upload: false        # Start with manual approval
+
+content:
+  topics:
+    - "Trending internet memes"
+    - "Funny fails compilation"
+    - "Crazy TikTok trends"
+    - "Best viral jokes"
+    - "Entertainment highlights"
+    - "Celebrity funny moments"
+    - "Gaming memes and highlights"
+    - "Animal funny videos"
+    - "Reaction videos"
+    - "Parody content"
+    - "Comedy sketches"
+    - "Viral challenges"
+  
+  sources:
+    - "reddit_funny"
+    - "reddit_memes"
+    - "tiktok_trending"
+    - "twitter_viral"
+    - "instagram_reels"
+    - "youtube_trending"
+    - "9gag"
+    - "imgur_viral"
+  
+  filters:
+    min_engagement: 200
+    exclude_keywords: ["nsfw", "inappropriate", "offensive", "political"]
+    preferred_keywords: ["funny", "viral", "trending", "meme", "comedy", "entertainment"]
+
+automation:
+  retry_failed: 3
+  backup_enabled: true
+  log_level: "INFO"
+
+
+
+

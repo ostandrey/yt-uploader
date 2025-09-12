@@ -1,0 +1,42 @@
+channel_name: "Tech News"
+settings:
+  visual_source: "mixed"    # stock / generated / mixed
+  voiceover: true
+  voice: "Aria"
+  music: "neutral_background"
+  schedule: "2_per_day"
+  video_duration: "30-60"
+  quality_check: true
+  auto_upload: false        # Start with manual approval
+
+content:
+  topics:
+    - "latest AI trends"
+    - "new gadgets and technology"
+    - "big tech company news"
+    - "startup innovations"
+    - "tech industry updates"
+    - "software releases"
+    - "hardware announcements"
+    - "cybersecurity news"
+    - "mobile app updates"
+    - "social media changes"
+  
+  sources:
+    - "tech_crunch"
+    - "the_verge"
+    - "wired"
+    - "ars_technica"
+    - "reddit_technology"
+    - "twitter_tech_trends"
+  
+  filters:
+    min_engagement: 100
+    exclude_keywords: ["politics", "controversial", "nsfw"]
+    preferred_keywords: ["AI", "technology", "innovation", "startup"]
+
+automation:
+  retry_failed: 3
+  backup_enabled: true
+  log_level: "INFO"
+
