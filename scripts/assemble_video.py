@@ -5,12 +5,13 @@ Creates actual MP4 videos from content and visuals using MoviePy.
 
 import os
 import random
+import io
 from typing import Dict, List, Optional
 from datetime import datetime
 import tempfile
 
 try:
-    from moviepy.editor import VideoFileClip, ColorClip, CompositeVideoClip, concatenate_videoclips, AudioFileClip
+    from moviepy.editor import VideoFileClip, ColorClip, CompositeVideoClip, concatenate_videoclips, AudioFileClip, VideoClip
     from moviepy.video.fx import resize
     MOVIEPY_AVAILABLE = True
 except ImportError:
@@ -197,21 +198,33 @@ class VideoAssembler:
             import requests
             from PIL import Image
             import tempfile
+            import numpy as np
             
             # Download image
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             
-            # Save to temporary file
-            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
-                tmp_file.write(response.content)
-                tmp_path = tmp_file.name
+            # Load image with PIL
+            image = Image.open(io.BytesIO(response.content))
             
-            # Create clip from image
-            clip = ImageClip(tmp_path).resize((1080, 1920)).set_duration(duration)
+            # Convert to RGB if needed
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
             
-            # Clean up temp file
-            os.unlink(tmp_path)
+            # Resize to vertical format (1080x1920)
+            image = image.resize((1080, 1920), Image.Resampling.LANCZOS)
+            
+            # Convert to numpy array
+            img_array = np.array(image)
+            
+            # Create a video clip from the image array
+            # We'll create multiple frames to make it a proper video clip
+            frames = []
+            for _ in range(int(duration * 30)):  # 30 fps
+                frames.append(img_array)
+            
+            # Convert to video clip
+            clip = VideoClip(lambda t: frames[int(t * 30) % len(frames)], duration=duration)
             
             return clip
             
@@ -247,9 +260,10 @@ class VideoAssembler:
             # Create composite clips
             composite_clips = []
             for i in range(min_clips):
+                # Use only the background clips (images) for now
+                # We'll add text overlays later when we have proper text rendering
                 composite = CompositeVideoClip([
-                    background_clips[i],
-                    text_clips[i]
+                    background_clips[i]
                 ])
                 composite_clips.append(composite)
             

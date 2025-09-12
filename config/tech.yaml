@@ -1,4 +1,5 @@
 channel_name: "Tech News"
+video_template: "tech_news"  # Use the new tech news template
 settings:
   visual_source: "mixed"    # stock / generated / mixed
   voiceover: true

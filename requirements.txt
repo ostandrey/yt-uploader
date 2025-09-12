@@ -3,6 +3,7 @@ requests==2.31.0
 python-dotenv==1.0.0
 schedule==1.2.0
 pyyaml==6.0.1
+feedparser==6.0.10
 
 # Video processing
 moviepy==1.0.3
