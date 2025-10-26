@@ -164,23 +164,28 @@ Automated YouTube Shorts generation and publishing system for multiple channels 
 ## 🏗️ Current Project Structure
 ```
 yt-auto/
-├── 📁 src/                          # New source code structure (partial)
-│   ├── 📁 core/                     # Core functionality
-│   │   ├── pipeline.py              # Main automation pipeline
-│   │   ├── scheduler.py             # Scheduling system
-│   │   └── logger.py                # Logging utilities
-├── 📁 scripts/                      # Legacy scripts (to be migrated)
+├── 📁 scripts/                      # Core automation scripts
+│   ├── main.py                      # Main video creation pipeline
+│   ├── generate_script.py           # Content generation
+│   ├── dynamic_content.py           # RSS feed integration
+│   ├── get_visuals.py               # Visual content fetching
+│   ├── assemble_video.py            # Video assembly
+│   ├── generate_audio.py            # Audio generation
+│   ├── upload_youtube.py            # YouTube upload
+│   └── video_templates.py           # Video templates
 ├── 📁 config/                       # Configuration files
-├── 📁 data/                         # Data storage (new structure)
-├── 📁 storage/                      # Legacy storage (to be migrated)
-└── 📁 tests/                        # Test files
+├── 📁 data/                         # Data storage
+├── 📁 storage/                      # Video storage
+├── 📁 tests/                        # Test files
+├── simple_scheduler.py              # Working scheduler
+└── start_simple_automation.py       # Automation launcher
 ```
 
 ## 📝 Next Actions
 1. ✅ **Phase 1**: Complete video creation and upload - COMPLETED
 2. ✅ **Phase 2**: Add dynamic content sources (RSS feeds, social media) - COMPLETED
 3. ✅ **Phase 2.5**: Set up daily automation scheduling - COMPLETED
-4. ✅ **Phase 2.6**: Project structure improvements - IN PROGRESS
+4. ✅ **Phase 2.6**: Project structure improvements - COMPLETED
 5. **Phase 3**: Expand to multiple channels (crypto, memes)
 6. **Phase 4**: Advanced AI features and optimization
 7. **Immediate**: Test automation system and monitor performance

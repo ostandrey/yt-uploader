@@ -13,11 +13,11 @@ from typing import Dict, List, Optional
 import threading
 import signal
 
-# Add src directory to path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add current directory to path for imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from src.core.logger import initialize_logger, get_logger
-from src.core.pipeline import YouTubeAutomationPipeline
+from logger import initialize_logger, get_logger
+from main import YouTubeAutomationPipeline
 
 class SmartScheduler:
     """Smart scheduler that runs automation during active hours."""

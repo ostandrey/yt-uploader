@@ -16,6 +16,8 @@ import argparse
 
 # Add current directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add parent directory to path for src imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from logger import initialize_logger, get_logger
 from generate_script import ContentGenerator
@@ -119,7 +121,7 @@ class YouTubeAutomationPipeline:
     
     def create_video_for_channel(self, channel_key: str, topic: Optional[str] = None) -> bool:
         """
-        Create a complete video for a specific channel.
+        Create a complete video for a specific channel with improved error handling.
         
         Args:
             channel_key: Channel key ('tech', 'crypto', 'memes')
@@ -128,11 +130,25 @@ class YouTubeAutomationPipeline:
         Returns:
             True if successful, False otherwise
         """
+        start_time = time.time()
+        
         try:
-            # Load channel configuration
-            channel_config = self.load_channel_config(channel_key)
-            channel_name = channel_config["channel_name"]
+            # Validate inputs
+            if not channel_key:
+                self.logger.log_error("No channel key provided")
+                return False
             
+            # Load channel configuration with error handling
+            try:
+                channel_config = self.load_channel_config(channel_key)
+                if not channel_config:
+                    self.logger.log_error(f"Failed to load configuration for channel: {channel_key}")
+                    return False
+            except Exception as e:
+                self.logger.log_error(f"Configuration loading failed for {channel_key}: {e}")
+                return False
+            
+            channel_name = channel_config.get("channel_name", channel_key)
             self.logger.log_info(f"Starting video creation for {channel_name}")
             
             # Step 1: Generate content
@@ -214,14 +230,15 @@ class YouTubeAutomationPipeline:
             )
             
             if video_id:
-                self.logger.log_success(f"Video created and uploaded for {channel_name}: {video_id}")
+                creation_time = time.time() - start_time
+                self.logger.log_success(f"Video created and uploaded for {channel_name} in {creation_time:.2f}s: {video_id}")
                 
                 # Log video creation details
                 self.logger.log_video_creation(
                     channel_name,
-                    topic,
+                    topic or "dynamic",
                     video_path,
-                    duration=60.0,  # Placeholder
+                    duration=creation_time,
                     status="uploaded"
                 )
                 
@@ -231,7 +248,10 @@ class YouTubeAutomationPipeline:
                 return False
                 
         except Exception as e:
-            self.logger.log_error(f"Video creation failed for {channel_key}: {e}")
+            creation_time = time.time() - start_time
+            self.logger.log_error(f"Video creation failed for {channel_key} after {creation_time:.2f}s: {e}")
+            import traceback
+            self.logger.log_error(f"Error details: {traceback.format_exc()}")
             return False
     
     
