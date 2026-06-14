@@ -4,11 +4,15 @@ YOUTUBE_TECH_CLIENT_ID=your_tech_client_id_here
 YOUTUBE_TECH_CLIENT_SECRET=your_tech_client_secret_here
 YOUTUBE_TECH_CREDENTIALS_FILE=credentials/tech_credentials.json
 
-# YouTube API Configuration for Crypto Channel
+# Coin Wire automation (Railway / coin_wire_worker.py)
+# Schedule is in config/coin_wire.yaml (timezone UTC by default)
+# Railway: mount volumes at /app/data and /app/tokens for persistence
+# Get from Google Cloud Console → APIs → Credentials → OAuth Desktop client
 YOUTUBE_CRYPTO_API_KEY=your_crypto_api_key_here
 YOUTUBE_CRYPTO_CLIENT_ID=your_crypto_client_id_here
 YOUTUBE_CRYPTO_CLIENT_SECRET=your_crypto_client_secret_here
 YOUTUBE_CRYPTO_CREDENTIALS_FILE=credentials/crypto_credentials.json
+# After setup: tokens/coin_wire_token.json (auto-generated, do not commit)
 
 # YouTube API Configuration for Memes Channel
 YOUTUBE_MEMES_API_KEY=your_memes_api_key_here
@@ -30,6 +34,8 @@ UNSPLASH_SECRET_KEY=your_unsplash_secret_key_here
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 TELEGRAM_CHAT_ID=189878550
+# Public channel ID for Coin Wire auto-posting (e.g. @CoinWire or -100xxxxxxxxxx)
+TELEGRAM_CHANNEL_ID=@coinwirenews
 
 # Storage Configuration
 STORAGE_TYPE=local  # local, minio, s3

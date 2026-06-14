@@ -1,0 +1,34 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial Black,96,&H00FFFFFF,&H40FFFFFF,&H00000000,&HE0000000,-1,0,0,0,100,100,0,0,1,10,6,2,50,50,400,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.05,0:00:01.12,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf35\c&H00FFFF&}Ethereum {\kf35\c&H00FFFFFF&}is {\kf35\c&H00FFFFFF&}leading
+Dialogue: 0,0:00:01.12,0:00:02.19,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf35\c&H00FFFFFF&}the {\kf35\c&H00FFFFFF&}next {\kf35\c&H00FFFF&}crypto
+Dialogue: 0,0:00:02.19,0:00:02.91,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf35\c&H00FFFFFF&}market {\kf35\c&H00FFFFFF&}move.
+Dialogue: 0,0:00:03.36,0:00:04.71,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf45\c&H00FFFFFF&}Traders {\kf45\c&H00FFFFFF&}are {\kf45\c&H00FFFFFF&}reacting
+Dialogue: 0,0:00:04.71,0:00:06.06,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf45\c&H00FFFFFF&}to {\kf45\c&H00FFFF&}ethereum {\kf45\c&H00FFFFFF&}ecosystem
+Dialogue: 0,0:00:06.06,0:00:06.51,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf45\c&H00FFFFFF&}news.
+Dialogue: 0,0:00:06.96,0:00:08.32,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf45\c&H00FFFFFF&}The {\kf45\c&H00FFFFFF&}SPHINCS- {\kf45\c&H00FFFFFF&}proposal
+Dialogue: 0,0:00:08.32,0:00:09.67,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf45\c&H00FFFFFF&}aims {\kf45\c&H00FFFFFF&}to {\kf45\c&H00FFFFFF&}reduce
+Dialogue: 0,0:00:09.67,0:00:11.02,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf45\c&H00FFFFFF&}the {\kf45\c&H00FFFFFF&}cost {\kf45\c&H00FFFFFF&}of
+Dialogue: 0,0:00:11.02,0:00:12.37,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf45\c&H00FFFFFF&}post-quantum {\kf45\c&H00FFFFFF&}signature {\kf45\c&H00FFFFFF&}verification
+Dialogue: 0,0:00:12.37,0:00:13.73,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf45\c&H00FFFFFF&}on {\kf45\c&H00FFFF&}Ethereum {\kf45\c&H00FFFFFF&}while
+Dialogue: 0,0:00:13.73,0:00:14.63,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf45\c&H00FFFFFF&}the {\kf45\c&H00FFFFFF&}network.
+Dialogue: 0,0:00:15.08,0:00:16.47,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf46\c&H00FFFFFF&}When {\kf46\c&H00FFFFFF&}institutions {\kf46\c&H00FFFFFF&}lean
+Dialogue: 0,0:00:16.47,0:00:17.85,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf46\c&H00FFFFFF&}into {\kf46\c&H00FFFF&}Ethereum, {\kf46\c&H00FFFF&}altcoins
+Dialogue: 0,0:00:17.85,0:00:19.24,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf46\c&H00FFFFFF&}often {\kf46\c&H00FFFFFF&}follow {\kf46\c&H00FFFFFF&}the
+Dialogue: 0,0:00:19.24,0:00:19.71,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf46\c&H00FFFFFF&}trend.
+Dialogue: 0,0:00:20.16,0:00:21.07,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf30\c&H00FFFFFF&}Get {\kf30\c&H00FFFFFF&}the {\kf30\c&H00FFFFFF&}next
+Dialogue: 0,0:00:21.07,0:00:21.38,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf30\c&H00FFFFFF&}shift.
+Dialogue: 0,0:00:21.83,0:00:22.90,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf35\c&H00FFFFFF&}Follow {\kf35\c&H00FFFFFF&}Coin {\kf35\c&H00FFFFFF&}Wire
+Dialogue: 0,0:00:22.90,0:00:23.98,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf35\c&H00FFFFFF&}for {\kf35\c&H00FFFFFF&}daily {\kf35\c&H00FFFFFF&}market
+Dialogue: 0,0:00:23.98,0:00:24.34,Default,,0,0,0,,{\fad(80,80)\bord10\shad6\blur0}{\kf35\c&H00FFFFFF&}moves.

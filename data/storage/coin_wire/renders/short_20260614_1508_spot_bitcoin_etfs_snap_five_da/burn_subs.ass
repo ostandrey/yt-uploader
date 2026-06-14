@@ -1,0 +1,30 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial Black,84,&H00FFFFFF,&H40FFFFFF,&H00000000,&HC0000000,-1,0,0,0,100,100,0,0,1,6,4,2,50,50,420,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:01.75,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf58\c&H00FFFFFF&}Spot {\kf58\c&H00FFFF&}bitcoin {\kf58\c&H00FFFFFF&}ETFs
+Dialogue: 0,0:00:01.75,0:00:03.50,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf58\c&H00FFFFFF&}snap {\kf58\c&H00FFFFFF&}five-day {\kf58\c&H00FFFFFF&}outflow
+Dialogue: 0,0:00:03.50,0:00:05.25,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf58\c&H00FFFFFF&}streak {\kf58\c&H00FFFFFF&}with {\kf58\c&H00FFFFFF&}$85.8
+Dialogue: 0,0:00:05.25,0:00:07.01,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf58\c&H00FFFFFF&}million {\kf58\c&H00FFFFFF&}Friday {\kf58\c&H00FFFFFF&}inflow
+Dialogue: 0,0:00:07.01,0:00:09.02,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf58\c&H00FFFFFF&}as {\kf58\c&H00FFFFFF&}ethe.... {\kf44\c&H00FFFFFF&}Traders
+Dialogue: 0,0:00:09.02,0:00:10.37,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf44\c&H00FFFFFF&}are {\kf44\c&H00FFFFFF&}reacting {\kf44\c&H00FFFFFF&}to
+Dialogue: 0,0:00:10.37,0:00:12.23,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf44\c&H00FFFFFF&}etf {\kf44\c&H00FFFFFF&}flows. {\kf56\c&H00FFFFFF&}BlackRock's
+Dialogue: 0,0:00:12.23,0:00:13.94,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf56\c&H00FFFFFF&}IBIT {\kf56\c&H00FFFFFF&}led {\kf56\c&H00FFFFFF&}Friday's
+Dialogue: 0,0:00:13.94,0:00:15.65,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf56\c&H00FFFFFF&}inflows {\kf56\c&H00FFFFFF&}at {\kf56\c&H00FFFFFF&}$57.7
+Dialogue: 0,0:00:15.65,0:00:17.36,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf56\c&H00FFFFFF&}million, {\kf56\c&H00FFFFFF&}with {\kf56\c&H00FFFFFF&}Fidelity's
+Dialogue: 0,0:00:17.36,0:00:19.07,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf56\c&H00FFFFFF&}FBTC {\kf56\c&H00FFFFFF&}adding {\kf56\c&H00FFFFFF&}$18.0
+Dialogue: 0,0:00:19.07,0:00:20.78,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf56\c&H00FFFFFF&}million, {\kf56\c&H00FFFFFF&}while {\kf56\c&H00FFFFFF&}no
+Dialogue: 0,0:00:20.78,0:00:22.64,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf56\c&H00FFFFFF&}fund {\kf56\c&H00FFFFFF&}repo... {\kf32\c&H00FFFFFF&}Get
+Dialogue: 0,0:00:22.64,0:00:23.64,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf33\c&H00FFFFFF&}the {\kf32\c&H00FFFFFF&}next {\kf33\c&H00FFFFFF&}shift.
+Dialogue: 0,0:00:24.03,0:00:25.16,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf37\c&H00FFFFFF&}Follow {\kf37\c&H00FFFFFF&}Coin {\kf37\c&H00FFFFFF&}Wire
+Dialogue: 0,0:00:25.16,0:00:26.28,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf37\c&H00FFFFFF&}for {\kf37\c&H00FFFFFF&}daily {\kf37\c&H00FFFFFF&}market
+Dialogue: 0,0:00:26.28,0:00:26.66,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf37\c&H00FFFFFF&}moves.

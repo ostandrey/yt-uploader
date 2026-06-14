@@ -1,0 +1,65 @@
+channel_name: "Coin Wire"
+brand:
+  telegram: "@coinwirenews"
+  youtube: "Coin Wire"
+  language: "en"
+  audience: "en"   # English-speaking — US/UK/global
+  disclaimer: "Not financial advice. News and education only."
+
+settings:
+  visual_source: "stock_video"
+  voiceover: true
+  voice: "en-US-AndrewNeural"
+  voice_rate: "-8%"
+  video_format: "9:16"
+  resolution: "1080x1920"
+  video_duration: "25-40"
+  auto_upload: false
+  quality_check: true
+  renderer: "ffmpeg"
+
+content:
+  topics:
+    - "Bitcoin and major crypto price moves"
+    - "Federal Reserve and macro economic news"
+    - "Regulation and SEC news"
+    - "ETF flows and institutional moves"
+    - "DeFi and Ethereum ecosystem updates"
+
+  rss_feeds:
+    coindesk: "https://www.coindesk.com/arc/outboundfeeds/rss/"
+    cointelegraph: "https://cointelegraph.com/rss"
+    the_block: "https://www.theblock.co/rss.xml"
+    decrypt: "https://decrypt.co/feed"
+
+  filters:
+    short_min_score: 12
+    telegram_min_score: 6
+    short_max_age_hours: 24
+    telegram_max_age_hours: 48
+    exclude_keywords: ["buy now", "sell now", "100x", "pump", "signal", "memecoin"]
+    preferred_keywords: ["bitcoin", "ethereum", "fed", "sec", "etf", "regulation", "billion"]
+
+publishing:
+  telegram:
+    enabled: true
+    posts_per_day: 3
+  youtube:
+    enabled: true
+    shorts_per_day: 2
+    upload_privacy: "unlisted"
+    auto_upload: true
+  tiktok:
+    enabled: false
+    mode: "manual_crosspost"
+  instagram:
+    enabled: false
+    mode: "manual_crosspost"
+
+automation:
+  timezone: "America/New_York"   # US Eastern — primary English crypto audience
+  retry_failed: 3
+  log_level: "INFO"
+  schedule:
+    telegram: ["08:00", "12:00", "17:00"]   # pre-market, lunch, post-close
+    shorts: ["09:00", "18:00"]             # morning + evening scroll

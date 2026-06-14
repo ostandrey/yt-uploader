@@ -1,0 +1,36 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial Black,84,&H00FFFFFF,&H40FFFFFF,&H00000000,&HC0000000,-1,0,0,0,100,100,0,0,1,6,4,2,50,50,420,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:01.27,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf42\c&H00FFFF&}Bitcoin {\kf42\c&H00FFFFFF&}dropped {\kf42\c&H00FF00&}74
+Dialogue: 0,0:00:01.27,0:00:02.55,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf42\c&H00FFFFFF&}percent {\kf42\c&H00FFFFFF&}on {\kf42\c&H00FFFFFF&}the
+Dialogue: 0,0:00:02.55,0:00:04.21,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf42\c&H00FFFFFF&}latest {\kf42\c&H00FFFFFF&}headline. {\kf40\c&H00FFFFFF&}Major
+Dialogue: 0,0:00:04.21,0:00:05.44,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf40\c&H00FFFFFF&}fund {\kf40\c&H00FFFFFF&}managers {\kf40\c&H00FFFFFF&}including
+Dialogue: 0,0:00:05.44,0:00:06.66,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf40\c&H00FFFFFF&}BlackRock {\kf40\c&H00FFFFFF&}and {\kf40\c&H00FFFFFF&}Fidelity
+Dialogue: 0,0:00:06.66,0:00:07.89,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf40\c&H00FFFFFF&}are {\kf40\c&H00FFFFFF&}driving {\kf40\c&H00FFFFFF&}the
+Dialogue: 0,0:00:07.89,0:00:09.44,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf40\c&H00FFFFFF&}flow. {\kf37\c&H00FFFFFF&}ETF {\kf37\c&H00FFFFFF&}flows
+Dialogue: 0,0:00:09.44,0:00:10.57,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf37\c&H00FFFFFF&}remain {\kf37\c&H00FFFFFF&}the {\kf37\c&H00FFFFFF&}main
+Dialogue: 0,0:00:10.57,0:00:11.69,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf37\c&H00FFFFFF&}driver {\kf37\c&H00FFFFFF&}for {\kf37\c&H00FFFF&}Bitcoin
+Dialogue: 0,0:00:11.69,0:00:13.35,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf37\c&H00FFFFFF&}price {\kf37\c&H00FFFFFF&}action. {\kf51\c&H00FFFFFF&}BlackRock's
+Dialogue: 0,0:00:13.35,0:00:14.91,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf51\c&H00FFFFFF&}IBIT {\kf51\c&H00FFFFFF&}dominates {\kf51\c&H00FFFFFF&}spot
+Dialogue: 0,0:00:14.91,0:00:16.46,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf51\c&H00FFFF&}Bitcoin {\kf51\c&H00FFFFFF&}exchange-traded {\kf51\c&H00FFFFFF&}funds
+Dialogue: 0,0:00:16.46,0:00:18.01,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf51\c&H00FFFFFF&}by {\kf51\c&H00FFFFFF&}trading {\kf51\c&H00FFFFFF&}volume,
+Dialogue: 0,0:00:18.01,0:00:19.56,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf51\c&H00FFFFFF&}with {\kf51\c&H00FFFFFF&}a {\kf51\c&H00FFFFFF&}current
+Dialogue: 0,0:00:19.56,0:00:21.12,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf51\c&H00FF00&}73.7% {\kf51\c&H00FFFFFF&}market {\kf51\c&H00FFFFFF&}share.
+Dialogue: 0,0:00:21.51,0:00:22.75,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf41\c&H00FFFFFF&}Institutional {\kf41\c&H00FFFFFF&}ETF {\kf41\c&H00FFFFFF&}flows
+Dialogue: 0,0:00:22.75,0:00:23.98,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf41\c&H00FFFFFF&}often {\kf41\c&H00FFFFFF&}set {\kf41\c&H00FFFFFF&}the
+Dialogue: 0,0:00:23.98,0:00:25.21,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf41\c&H00FFFFFF&}tone {\kf41\c&H00FFFFFF&}for {\kf41\c&H00FFFF&}Bitcoin's
+Dialogue: 0,0:00:25.21,0:00:26.75,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf40\c&H00FFFFFF&}next {\kf41\c&H00FFFFFF&}move. {\kf32\c&H00FFFFFF&}Get
+Dialogue: 0,0:00:26.75,0:00:27.75,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf33\c&H00FFFFFF&}the {\kf32\c&H00FFFFFF&}next {\kf33\c&H00FFFFFF&}shift.
+Dialogue: 0,0:00:28.14,0:00:29.27,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf37\c&H00FFFFFF&}Follow {\kf37\c&H00FFFFFF&}Coin {\kf37\c&H00FFFFFF&}Wire
+Dialogue: 0,0:00:29.27,0:00:30.39,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf37\c&H00FFFFFF&}for {\kf37\c&H00FFFFFF&}daily {\kf37\c&H00FFFFFF&}market
+Dialogue: 0,0:00:30.39,0:00:30.76,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf37\c&H00FFFFFF&}moves.

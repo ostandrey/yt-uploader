@@ -1,0 +1,29 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial Black,84,&H00FFFFFF,&H40FFFFFF,&H00000000,&HC0000000,-1,0,0,0,100,100,0,0,1,6,4,2,50,50,420,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:01.03,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf34\c&H00FFFF&}Bitcoin {\kf34\c&H00FFFFFF&}dropped {\kf34\c&H00FFFFFF&}four
+Dialogue: 0,0:00:01.03,0:00:02.07,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf34\c&H00FFFFFF&}percent {\kf34\c&H00FFFFFF&}after {\kf34\c&H00FFFFFF&}the
+Dialogue: 0,0:00:02.07,0:00:03.11,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf34\c&H6060FF&}FED {\kf34\c&H00FFFFFF&}held {\kf34\c&H6060FF&}rates
+Dialogue: 0,0:00:03.11,0:00:04.68,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf34\c&H00FFFFFF&}steady. {\kf41\c&H00FFFFFF&}Markets {\kf41\c&H00FFFFFF&}expected
+Dialogue: 0,0:00:04.68,0:00:05.92,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf41\c&H00FFFFFF&}a {\kf41\c&H6060FF&}hawkish {\kf41\c&H00FFFFFF&}tone,
+Dialogue: 0,0:00:05.92,0:00:07.16,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf41\c&H00FFFFFF&}but {\kf41\c&H00FFFFFF&}the {\kf41\c&H6060FF&}FED
+Dialogue: 0,0:00:07.16,0:00:08.40,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf41\c&H00FFFFFF&}kept {\kf41\c&H6060FF&}rates {\kf41\c&H00FFFFFF&}unchanged.
+Dialogue: 0,0:00:08.80,0:00:10.17,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf45\c&H00FFFF&}Ethereum {\kf45\c&H00FFFFFF&}followed {\kf45\c&H00FFFF&}Bitcoin
+Dialogue: 0,0:00:10.17,0:00:11.55,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf45\c&H00FFFFFF&}lower, {\kf45\c&H00FFFFFF&}falling {\kf45\c&H00FFFFFF&}about
+Dialogue: 0,0:00:11.55,0:00:13.32,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf45\c&H00FFFFFF&}three {\kf45\c&H00FFFFFF&}percent. {\kf45\c&H00FFFF&}Crypto
+Dialogue: 0,0:00:13.32,0:00:14.68,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf45\c&H00FFFFFF&}remains {\kf45\c&H00FFFFFF&}highly {\kf45\c&H00FFFFFF&}sensitive
+Dialogue: 0,0:00:14.68,0:00:16.03,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf45\c&H00FFFFFF&}to {\kf45\c&H6060FF&}Federal {\kf45\c&H6060FF&}Reserve
+Dialogue: 0,0:00:16.03,0:00:17.55,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf45\c&H6060FF&}policy. {\kf32\c&H00FFFFFF&}Get {\kf33\c&H00FFFFFF&}the
+Dialogue: 0,0:00:17.55,0:00:18.98,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf32\c&H00FFFFFF&}next {\kf33\c&H00FFFFFF&}shift. {\kf37\c&H00FFFFFF&}Follow
+Dialogue: 0,0:00:18.98,0:00:20.10,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf37\c&H00FFFFFF&}Coin {\kf37\c&H00FFFFFF&}Wire {\kf37\c&H00FFFFFF&}for
+Dialogue: 0,0:00:20.10,0:00:21.23,Default,,0,0,0,,{\fad(80,80)\bord6\shad4}{\kf37\c&H00FFFFFF&}daily {\kf37\c&H00FFFFFF&}market {\kf37\c&H00FFFFFF&}moves.
