@@ -1,47 +1,20 @@
-# Core dependencies
+# Coin Wire — production dependencies
+
 requests==2.31.0
 python-dotenv==1.0.0
-schedule==1.2.0
 pyyaml==6.0.1
 feedparser==6.0.10
-
-# Video processing
-moviepy==1.0.3
-ffmpeg-python==0.2.0
 pillow==10.0.0
 
-# AI and content generation
-abacusai==1.4.61  # Latest version
-openai==1.3.0
-google-generativeai==0.3.0
-
-# YouTube API
-google-api-python-client==2.100.0
-google-auth==2.23.0
-google-auth-oauthlib==1.0.0
-
-# Stock content APIs
-# pexels-api - use requests directly
-# pixabay - use requests directly
-
-# Text-to-Speech
-gtts==2.3.2
-pyttsx3==2.90
+# Video / audio
 edge-tts>=7.2.0
 imageio-ffmpeg>=0.5.0
 faster-whisper>=1.0.0
 
-# Storage
-minio==7.1.17
-boto3==1.29.0
+# YouTube OAuth + upload
+google-api-python-client==2.100.0
+google-auth==2.23.0
+google-auth-oauthlib==1.0.0
 
-# Database
-sqlalchemy==2.0.23
-
-# Scheduling and monitoring
+# Scheduler (Railway worker)
 apscheduler==3.10.4
-python-telegram-bot==20.6
-
-# Utilities
-python-dateutil==2.8.2
-

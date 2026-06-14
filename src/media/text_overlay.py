@@ -97,26 +97,6 @@ def create_stat_overlay_png(
     return output_path
 
 
-def create_hook_flash_png(output_path: Path) -> Path:
-    """Red border flash for first 0.5s — pattern interrupt hook."""
-    image = Image.new("RGBA", (SHORT_WIDTH, SHORT_HEIGHT), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    border = 18
-    draw.rectangle(
-        [(0, 0), (SHORT_WIDTH, SHORT_HEIGHT)],
-        outline=(255, 40, 40, 220),
-        width=border,
-    )
-    draw.rectangle(
-        [(border, border), (SHORT_WIDTH - border, SHORT_HEIGHT - border)],
-        outline=(255, 80, 80, 120),
-        width=6,
-    )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(output_path)
-    return output_path
-
-
 def create_outro_png(output_path: Path, summary: str = "") -> Path:
     """Branded CTA card for end of Short."""
     image = Image.new("RGBA", (SHORT_WIDTH, SHORT_HEIGHT), (8, 10, 18, 255))
@@ -367,88 +347,4 @@ def apply_final_layers(
         filter_parts,
         "vfinal",
         encode_args=FINAL_ENCODE_ARGS,
-    )
-
-
-def apply_brand_layers(
-    video_path: Path,
-    overlays: List[StatOverlay],
-    word_entries: List[tuple[float, float, str]],
-    output_path: Path,
-    work_dir: Path,
-) -> Path:
-    """Hook stat + persistent watermark."""
-    work_dir.mkdir(parents=True, exist_ok=True)
-    duration = _probe_duration(video_path)
-
-    extra_inputs: List[Path] = []
-    filter_parts: List[str] = []
-    filter_parts.append("[0:v]scale=in_range=full:out_range=limited,format=yuv420p,setsar=1[vnorm]")
-    prev = "vnorm"
-    input_index = 1
-
-    watermark_path = work_dir / "watermark.png"
-    create_watermark_png(watermark_path)
-    extra_inputs.append(watermark_path)
-    filter_parts.append(f"[{prev}][{input_index}:v]overlay=0:0:format=auto[vwm]")
-    prev = "vwm"
-    input_index += 1
-
-    for overlay in overlays:
-        start = 0.0 if overlay.show_from_start else 0.3
-        if not overlay.show_from_start:
-            for ws, _, word in word_entries:
-                if overlay.keyword in word.lower():
-                    start = ws
-                    break
-
-        png_path = work_dir / f"stat_{overlay.text.replace(' ', '_').replace('%', 'pct')}.png"
-        create_stat_overlay_png(
-            overlay.text, png_path, hook_style=overlay.show_from_start
-        )
-        extra_inputs.append(png_path)
-
-        fade = STAT_FADE_SEC
-        disp = overlay.display_sec
-        total = disp + fade
-        end = min(start + total, duration)
-        stat_label = f"stat{input_index}"
-        out_label = f"v{input_index}"
-        y_expr = _stat_overlay_y(start, fade)
-
-        filter_parts.append(
-            f"[{input_index}:v]format=rgba,loop=loop=-1:size=1,fps=30,"
-            f"trim=duration={total:.3f},setpts=PTS-STARTPTS,"
-            f"fade=t=in:st=0:d={fade:.3f}:alpha=1,"
-            f"fade=t=out:st={disp:.3f}:d={fade:.3f}:alpha=1,"
-            f"setpts=PTS+{start:.3f}/TB[{stat_label}]"
-        )
-        filter_parts.append(
-            f"[{prev}][{stat_label}]overlay=x=0:y='{y_expr}':"
-            f"enable='between(t,{start:.3f},{end:.3f})':format=auto[{out_label}]"
-        )
-        prev = out_label
-        input_index += 1
-
-    if not overlays:
-        return _run_overlay(
-            video_path, output_path, work_dir, extra_inputs, filter_parts, prev
-        )
-
-    return _run_overlay(
-        video_path, output_path, work_dir, extra_inputs, filter_parts, prev
-    )
-
-
-# Backwards-compatible alias
-def apply_stat_overlays(
-    video_path: Path,
-    overlays: List[StatOverlay],
-    word_entries: List[tuple[float, float, str]],
-    output_path: Path,
-    work_dir: Path,
-    time_offset_sec: float = 0.0,
-) -> Path:
-    return apply_brand_layers(
-        video_path, overlays, word_entries, output_path, work_dir
     )
