@@ -114,10 +114,7 @@ def _youtube_ready() -> bool:
     if "your_" in client_id or "your_" in client_secret:
         return False
     token = ROOT / "tokens" / "coin_wire_token.json"
-    creds = ROOT / os.getenv(
-        "YOUTUBE_CRYPTO_CREDENTIALS_FILE", "credentials/crypto_credentials.json"
-    )
-    return token.exists() or creds.exists()
+    return token.exists()
 
 
 def run_pipeline(

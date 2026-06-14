@@ -15,7 +15,6 @@ Prerequisites in Google Cloud Console:
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -24,27 +23,17 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from src.publishers.youtube_publisher import (
-    YouTubePublisher,
-    build_credentials_json_from_env,
-)
+from src.publishers.youtube_publisher import YouTubePublisher
 
 
 def main() -> None:
     load_dotenv(ROOT / ".env")
 
-    creds_path = ROOT / os.getenv(
-        "YOUTUBE_CRYPTO_CREDENTIALS_FILE", "credentials/crypto_credentials.json"
-    )
-
     print("=" * 60)
     print("Coin Wire — YouTube OAuth Setup")
     print("=" * 60)
 
-    build_credentials_json_from_env(creds_path)
-    print(f"Credentials file: {creds_path}")
-
-    publisher = YouTubePublisher(credentials_file=creds_path)
+    publisher = YouTubePublisher()
     print("\nOpening browser for Google login...")
     print("Use: crypto.finance.news.yt@gmail.com (your Coin Wire account)\n")
 

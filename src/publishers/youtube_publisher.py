@@ -4,7 +4,6 @@ YouTube upload for Coin Wire — OAuth, unlisted upload, publish approval.
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import List, Optional
@@ -27,18 +26,11 @@ CATEGORY_NEWS = "25"  # News & Politics
 class YouTubePublisher:
     def __init__(
         self,
-        credentials_file: Optional[Path] = None,
         token_file: Optional[Path] = None,
         channel_label: str = "Coin Wire",
     ):
         load_dotenv()
         root = Path(__file__).resolve().parents[2]
-        self.credentials_file = Path(
-            credentials_file
-            or os.getenv("YOUTUBE_CRYPTO_CREDENTIALS_FILE", "credentials/crypto_credentials.json")
-        )
-        if not self.credentials_file.is_absolute():
-            self.credentials_file = root / self.credentials_file
 
         self.token_file = Path(token_file or "tokens/coin_wire_token.json")
         if not self.token_file.is_absolute():
@@ -61,14 +53,8 @@ class YouTubePublisher:
             self._save_token(creds)
             return creds
 
-        if not self.credentials_file.exists():
-            raise FileNotFoundError(
-                f"OAuth credentials not found: {self.credentials_file}\n"
-                "Run: python setup_youtube_oauth.py"
-            )
-
-        flow = InstalledAppFlow.from_client_secrets_file(
-            str(self.credentials_file), SCOPES
+        flow = InstalledAppFlow.from_client_config(
+            oauth_client_config_from_env(), SCOPES
         )
         creds = flow.run_local_server(port=0)
         self._save_token(creds)
@@ -179,8 +165,8 @@ class YouTubePublisher:
         return f"https://studio.youtube.com/video/{video_id}/edit"
 
 
-def build_credentials_json_from_env(output_path: Path) -> Path:
-    """Create OAuth client JSON from YOUTUBE_CRYPTO_CLIENT_ID/SECRET in .env."""
+def oauth_client_config_from_env() -> dict:
+    """OAuth client config from YOUTUBE_CRYPTO_CLIENT_ID/SECRET in .env."""
     load_dotenv()
     client_id = os.getenv("YOUTUBE_CRYPTO_CLIENT_ID", "").strip()
     client_secret = os.getenv("YOUTUBE_CRYPTO_CLIENT_SECRET", "").strip()
@@ -190,7 +176,7 @@ def build_credentials_json_from_env(output_path: Path) -> Path:
             "Set YOUTUBE_CRYPTO_CLIENT_ID and YOUTUBE_CRYPTO_CLIENT_SECRET in .env"
         )
 
-    payload = {
+    return {
         "installed": {
             "client_id": client_id,
             "project_id": "coin-wire-uploader",
@@ -201,7 +187,3 @@ def build_credentials_json_from_env(output_path: Path) -> Path:
             "redirect_uris": ["http://localhost"],
         }
     }
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    return output_path
