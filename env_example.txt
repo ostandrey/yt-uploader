@@ -8,7 +8,9 @@ TELEGRAM_CHAT_ID=
 # YouTube (Coin Wire channel)
 YOUTUBE_CRYPTO_CLIENT_ID=
 YOUTUBE_CRYPTO_CLIENT_SECRET=
-# After setup_youtube_oauth.py: tokens/coin_wire_token.json (do not commit)
+# Local: tokens/coin_wire_token.json after setup_youtube_oauth.py
+# Railway: paste full JSON as YOUTUBE_CRYPTO_TOKEN_JSON (or mount /app/tokens volume)
+# YOUTUBE_CRYPTO_TOKEN_JSON={"token":"...","refresh_token":"...",...}
 
 # Stock media
 PEXELS_API_KEY=

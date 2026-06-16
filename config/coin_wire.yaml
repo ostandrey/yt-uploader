@@ -60,6 +60,9 @@ automation:
   timezone: "America/New_York"   # US Eastern — primary English crypto audience
   retry_failed: 3
   log_level: "INFO"
+  storage:
+    retention_days: 7          # delete local MP4 + render dirs older than this
+    cleanup_time: "03:00"      # daily cleanup (channel timezone)
   schedule:
     telegram: ["08:00", "12:00", "17:00"]   # pre-market, lunch, post-close
     shorts: ["09:00", "18:00"]             # morning + evening scroll

@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p data/storage/coin_wire tokens credentials
+RUN mkdir -p data/storage/coin_wire/videos data/storage/coin_wire/renders tokens
 
 ENV PYTHONUNBUFFERED=1
 
