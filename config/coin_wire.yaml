@@ -43,7 +43,13 @@ content:
 publishing:
   telegram:
     enabled: true
-    posts_per_day: 3
+    min_posts_per_day: 3
+    max_posts_per_day: 8
+    breaking_score: 22       # post ASAP on next poll
+    strong_score: 15         # post when cooldown elapsed
+    insight_score: 18        # include "Takeaway" block
+    post_cooldown_minutes: 90
+    poll_interval_minutes: 30
   youtube:
     enabled: true
     shorts_per_day: 2
@@ -64,5 +70,5 @@ automation:
     retention_days: 7          # delete local MP4 + render dirs older than this
     cleanup_time: "03:00"      # daily cleanup (channel timezone)
   schedule:
-    telegram: ["08:00", "12:00", "17:00"]   # pre-market, lunch, post-close
+    telegram_floor: ["08:00", "12:00", "17:00"]   # minimum posts by these times
     shorts: ["09:00", "18:00"]             # morning + evening scroll

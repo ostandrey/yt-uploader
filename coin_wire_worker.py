@@ -3,7 +3,7 @@
 Coin Wire background worker — runs on Railway or any always-on server.
 
 Schedule (see config/coin_wire.yaml, default America/New_York):
-  Telegram news  — 08:00, 12:00, 17:00
+  Telegram news  — smart poll every 30 min (3–8/day, breaking ASAP)
   YouTube Shorts — 09:00, 18:00 (unlisted upload + Telegram notify)
 
 Usage:
@@ -26,6 +26,7 @@ from pathlib import Path
 import yaml
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
@@ -76,7 +77,7 @@ def _run_script(script: str, *args: str) -> bool:
 
 
 def job_telegram() -> None:
-    _run_script("post_crypto_news.py", "--count", "1")
+    _run_script("post_crypto_news.py")
 
 
 def job_short() -> None:
@@ -140,16 +141,28 @@ def main() -> None:
 
     schedule_cfg = automation.get("schedule", {})
     timezone = automation.get("timezone", "UTC")
+    tg_poll_minutes = int(
+        config.get("publishing", {}).get("telegram", {}).get("poll_interval_minutes", 30)
+    )
 
-    tg_times: list[str] = schedule_cfg.get("telegram", ["08:00", "14:00", "20:00"])
     short_times: list[str] = schedule_cfg.get("shorts", ["10:00", "18:00"])
+    floor_times: list[str] = schedule_cfg.get(
+        "telegram_floor", schedule_cfg.get("telegram", ["08:00", "12:00", "17:00"])
+    )
     storage_cfg = automation.get("storage", {})
     cleanup_time: str = storage_cfg.get("cleanup_time", "03:00")
+    tg_cfg = config.get("publishing", {}).get("telegram", {})
 
     log.info("=" * 60)
     log.info("Coin Wire Worker — starting")
     log.info("Timezone: %s", timezone)
-    log.info("Telegram: %s", ", ".join(tg_times))
+    log.info(
+        "Telegram: every %dm, %d–%d posts/day, floor %s",
+        tg_poll_minutes,
+        tg_cfg.get("min_posts_per_day", 3),
+        tg_cfg.get("max_posts_per_day", 8),
+        ", ".join(floor_times),
+    )
     log.info("Shorts:   %s", ", ".join(short_times))
     log.info("Cleanup:  %s (retain %d days)", cleanup_time, retention_days)
     log.info("News filter: min score %s, max age %sh",
@@ -159,15 +172,13 @@ def main() -> None:
 
     scheduler = BlockingScheduler(timezone=timezone)
 
-    for index, time_str in enumerate(tg_times):
-        hour, minute = _parse_hhmm(time_str)
-        scheduler.add_job(
-            job_telegram,
-            CronTrigger(hour=hour, minute=minute, timezone=timezone),
-            id=f"telegram_{index}",
-            replace_existing=True,
-            misfire_grace_time=3600,
-        )
+    scheduler.add_job(
+        job_telegram,
+        IntervalTrigger(minutes=tg_poll_minutes),
+        id="telegram_smart",
+        replace_existing=True,
+        misfire_grace_time=1800,
+    )
 
     for index, time_str in enumerate(short_times):
         hour, minute = _parse_hhmm(time_str)

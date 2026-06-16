@@ -5,9 +5,12 @@ Rule-based — no LLM, runs fully automated.
 
 from __future__ import annotations
 
+import html
 import re
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
+
+TelegramTier = Literal["breaking", "insight", "strong", "standard", "skip"]
 
 # High-impact signals (weight)
 HIGH_IMPACT_KEYWORDS: Dict[str, int] = {
@@ -116,10 +119,57 @@ HASHTAG_MAP: List[Tuple[str, str]] = [
 
 FACT_SIGNAL_RE = re.compile(
     r"(\d+(?:\.\d+)?\s*%|\$\s*[\d,.]+\s*(?:million|billion|m|b)?|"
-    r"etf|sec|fed|billion|million|outflow|inflow|approval|lawsuit|"
-    r"rate cut|rate hike|blackrock|treasury)",
+    r"\betf\b|\bsec\b|\bfed\b|\bbillion\b|\bmillion\b|\boutflow\b|\binflow\b|"
+    r"\bapproval\b|\blawsuit\b|rate cut|rate hike|\bblackrock\b|\btreasury\b)",
     re.IGNORECASE,
 )
+
+CRYPTO_RELEVANCE_TERMS = (
+    "bitcoin", "btc", "ethereum", "eth", "crypto", "cryptocurrency",
+    "blockchain", "defi", "stablecoin", "binance", "coinbase",
+    "solana", "xrp", "ripple", "dogecoin", "altcoin", "web3",
+    "tokenization", "nft", "microstrategy", "grayscale",
+    "digital asset", "on-chain", "onchain", "spot bitcoin", "spot ether",
+    "coinbase", "tether", "usdc", "usdt",
+)
+
+MACRO_RELEVANCE_TERMS = (
+    "federal reserve", "interest rate", "rate cut", "rate hike",
+    "cpi", "inflation", "jobs report", "treasury",
+)
+
+OFF_TOPIC_TERMS = (
+    "openai", "chatgpt", "xai", "artificial intelligence",
+    "elon musk", "spacex", "tesla", "nvidia", "apple", "google",
+    "trade secret", "copyright", "trademark",
+)
+
+_WORD_BOUNDARY_KEYWORDS = frozenset({
+    "sec", "fed", "eth", "btc", "etf", "defi", "ban", "banned",
+})
+
+
+def _contains_term(text: str, term: str) -> bool:
+    lower = text.lower()
+    if term in _WORD_BOUNDARY_KEYWORDS or len(term) <= 3:
+        return bool(re.search(rf"\b{re.escape(term)}\b", lower))
+    return term in lower
+
+
+def is_crypto_relevant(article: Dict) -> bool:
+    text = _article_text(article)
+    if any(_contains_term(text, term) for term in CRYPTO_RELEVANCE_TERMS):
+        return True
+    if any(term in text for term in MACRO_RELEVANCE_TERMS):
+        return True
+    return False
+
+
+def is_off_topic(article: Dict) -> bool:
+    text = _article_text(article)
+    if is_crypto_relevant(article):
+        return False
+    return any(term in text for term in OFF_TOPIC_TERMS)
 
 
 def _article_text(article: Dict) -> str:
@@ -157,7 +207,7 @@ def score_article(
     score = 0
 
     for keyword, weight in HIGH_IMPACT_KEYWORDS.items():
-        if keyword in text:
+        if _contains_term(text, keyword):
             score += weight
 
     source = article.get("source", "")
@@ -169,6 +219,12 @@ def score_article(
 
     if is_fluff(article):
         score -= 20
+
+    if is_off_topic(article):
+        score -= 40
+
+    if not is_crypto_relevant(article):
+        score -= 25
 
     if is_generic_roundup(article.get("title", "")):
         score -= 15
@@ -185,7 +241,13 @@ def score_article(
             score -= 10
 
     # Must have at least one hard news signal for shorts
-    hard_signals = sum(1 for kw in ("etf", "sec", "fed", "billion", "regulation", "hack", "approval", "outflow", "inflow", "tokenization", "wall street") if kw in text)
+    hard_signals = sum(
+        1 for kw in (
+            "etf", "sec", "fed", "billion", "regulation", "hack", "approval",
+            "outflow", "inflow", "tokenization", "wall street",
+        )
+        if _contains_term(text, kw)
+    )
     if hard_signals == 0 and score < min_short_score:
         score -= 5
 
@@ -195,6 +257,8 @@ def score_article(
 def passes_short_filter(article: Dict, min_score: int = 12, max_age_hours: int = 24) -> bool:
     if is_fluff(article) or is_generic_roundup(article.get("title", "")):
         return False
+    if is_off_topic(article) or not is_crypto_relevant(article):
+        return False
     age_h = article_age_hours(article)
     if age_h is not None and age_h > max_age_hours:
         return False
@@ -202,7 +266,9 @@ def passes_short_filter(article: Dict, min_score: int = 12, max_age_hours: int =
 
 
 def passes_telegram_filter(article: Dict, min_score: int = 6, max_age_hours: int = 48) -> bool:
-    if is_fluff(article):
+    if is_fluff(article) or is_off_topic(article):
+        return False
+    if not is_crypto_relevant(article):
         return False
     age_h = article_age_hours(article)
     if age_h is not None and age_h > max_age_hours:
@@ -211,17 +277,18 @@ def passes_telegram_filter(article: Dict, min_score: int = 6, max_age_hours: int
 
 
 def extract_key_bullets(article: Dict, max_bullets: int = 3) -> List[str]:
-    """Pull the most factual sentences — not just the RSS blurb."""
+    """Pull factual sentences from summary — never duplicate the headline."""
     title = article.get("title", "").strip()
     summary = article.get("summary", "").strip()
+    title_key = re.sub(r"\W+", "", title.lower())
     candidates: List[Tuple[int, str]] = []
-
-    if title:
-        candidates.append((score_sentence(title) + 3, title))
 
     for sentence in re.split(r"(?<=[.!?])\s+", summary):
         sentence = sentence.strip()
         if len(sentence) < 30:
+            continue
+        sent_key = re.sub(r"\W+", "", sentence.lower())
+        if sent_key == title_key or title_key in sent_key and len(sent_key) < len(title_key) + 20:
             continue
         candidates.append((score_sentence(sentence), sentence))
 
@@ -253,7 +320,7 @@ def score_sentence(sentence: str) -> int:
     if FACT_SIGNAL_RE.search(sentence):
         score += 6
     for keyword, weight in HIGH_IMPACT_KEYWORDS.items():
-        if keyword in lower:
+        if _contains_term(lower, keyword):
             score += min(weight, 4)
     if re.search(r"\d", sentence):
         score += 2
@@ -264,12 +331,139 @@ def build_hashtags(article: Dict, max_tags: int = 5) -> str:
     text = _article_text(article)
     tags: List[str] = []
     for keyword, tag in HASHTAG_MAP:
-        if keyword in text and tag not in tags:
+        if _contains_term(text, keyword) and tag not in tags:
             tags.append(tag)
         if len(tags) >= max_tags - 1:
             break
     tags.append("#CoinWire")
     return " ".join(tags[:max_tags])
+
+
+def classify_telegram_tier(
+    score: int,
+    *,
+    breaking_score: int = 22,
+    insight_score: int = 18,
+    strong_score: int = 15,
+    min_score: int = 6,
+) -> TelegramTier:
+    if score < min_score:
+        return "skip"
+    if score >= breaking_score:
+        return "breaking"
+    if score >= insight_score:
+        return "insight"
+    if score >= strong_score:
+        return "strong"
+    return "standard"
+
+
+TAKEAWAY_RULES: List[Tuple[tuple[str, ...], str]] = [
+    (
+        ("etf", "outflow", "inflow"),
+        "ETF flow headlines often move Bitcoin before spot fully prices in — watch daily issuer data and net flows.",
+    ),
+    (
+        ("sec", "regulation", "regulatory"),
+        "Regulatory headlines reshape institutional risk appetite — compliance news can hit exchanges and majors fast.",
+    ),
+    (
+        ("lawsuit", "settlement"),
+        "Legal headlines can move exchange and protocol tokens if the case names a listed crypto company — confirm who is affected.",
+    ),
+    (
+        ("fed", "federal reserve", "interest rate", "rate cut", "rate hike", "inflation"),
+        "Fed and macro data drive risk-on/risk-off across crypto — rates staying restrictive usually pressures speculative assets.",
+    ),
+    (
+        ("hack", "exploit", "breach"),
+        "Security incidents can trigger short-term sell pressure and chain outflows — verify scope before sizing any reaction.",
+    ),
+    (
+        ("blackrock", "fidelity", "institutional", "wall street", "treasury"),
+        "Institutional adoption stories support the long-term narrative but near-term price still follows liquidity and macro.",
+    ),
+    (
+        ("tokenization", "rwa"),
+        "Tokenization news signals where TradFi capital may enter on-chain next — follow issuer partnerships and live products.",
+    ),
+    (
+        ("billion", "million"),
+        "Large dollar figures usually mean treasury, ETF, or M&A moves — size matters more than the headline adjective.",
+    ),
+]
+
+
+def build_market_takeaway(article: Dict) -> str:
+    """Rule-based 'so what' line — no LLM."""
+    text = _article_text(article)
+    for keywords, takeaway in TAKEAWAY_RULES:
+        if any(_contains_term(text, keyword) for keyword in keywords):
+            return takeaway
+    if "bitcoin" in text or "ethereum" in text:
+        return (
+            "Major coin headlines tend to drag the broader market — "
+            "watch BTC dominance and ETH beta for the knock-on move."
+        )
+    return (
+        "This is a developing story — follow the primary source for "
+        "confirmed numbers before trading on headlines alone."
+    )
+
+
+def _esc(text: str) -> str:
+    return html.escape(text, quote=False)
+
+
+def format_telegram_post_html(
+    article: Dict,
+    *,
+    tier: TelegramTier = "standard",
+    market_line: Optional[str] = None,
+    include_insight: bool = False,
+) -> str:
+    """HTML post for Telegram — headline, bullets, optional takeaway."""
+    max_bullets = 2 if tier in ("breaking", "insight", "strong") else 2
+    bullets = extract_key_bullets(article, max_bullets=max_bullets)
+    hashtags = build_hashtags(article, max_tags=4)
+    source_label = _esc(article.get("source", "news").replace("_", " ").title())
+    title = _esc(article["title"])
+
+    lines: List[str] = []
+
+    if market_line:
+        lines.append(f"<i>{_esc(market_line)}</i>")
+        lines.append("")
+
+    if tier == "breaking":
+        lines.append("🚨 <b>BREAKING</b>")
+    elif tier == "insight":
+        lines.append("💡 <b>MARKET TAKE</b>")
+    elif tier == "strong":
+        lines.append("📌 <b>KEY STORY</b>")
+    else:
+        lines.append("📰 <b>COIN WIRE</b>")
+
+    lines.append(f"<b>{title}</b>")
+    lines.append("")
+
+    for bullet in bullets:
+        lines.append(f"• {_esc(bullet)}")
+
+    if include_insight or tier in ("breaking", "insight"):
+        lines.append("")
+        lines.append(f"💡 <b>Takeaway</b>")
+        lines.append(_esc(build_market_takeaway(article)))
+
+    lines.extend([
+        "",
+        hashtags,
+        "",
+        f"📎 {_esc(source_label)}",
+        "",
+        "<i>Not financial advice. News and education only.</i>",
+    ])
+    return "\n".join(lines)
 
 
 def format_telegram_post(article: Dict) -> str:

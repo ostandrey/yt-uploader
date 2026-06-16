@@ -3,8 +3,11 @@
 from src.content.news_filter import (
     build_hashtags,
     extract_key_bullets,
+    is_crypto_relevant,
     is_fluff,
+    is_off_topic,
     passes_short_filter,
+    passes_telegram_filter,
     score_article,
 )
 
@@ -34,6 +37,22 @@ def test_serious_article_scores_high():
     assert passes_short_filter(article)
 
 
+def test_off_topic_ai_lawsuit_rejected():
+    article = {
+        "title": "Elon Musk Loses Again to OpenAI as Judge Dismisses xAI Trade Secret Lawsuit",
+        "summary": (
+            "A federal judge handed Elon Musk his second defeat against OpenAI "
+            "after finding xAI failed to show OpenAI improperly obtained confidential info."
+        ),
+        "source": "decrypt",
+        "published": None,
+    }
+    assert is_off_topic(article)
+    assert not is_crypto_relevant(article)
+    assert not passes_telegram_filter(article)
+    assert score_article(article) < 12
+
+
 def test_telegram_bullets_and_tags():
     article = {
         "title": "Fed holds rates steady, Bitcoin dips 2%",
@@ -47,6 +66,7 @@ def test_telegram_bullets_and_tags():
     }
     bullets = extract_key_bullets(article)
     assert len(bullets) >= 1
+    assert article["title"] not in bullets
     tags = build_hashtags(article)
     assert "#Bitcoin" in tags or "#Fed" in tags
     assert "#CoinWire" in tags
