@@ -50,6 +50,8 @@ publishing:
     insight_score: 18        # include "Takeaway" block
     post_cooldown_minutes: 90
     poll_interval_minutes: 30
+    max_posts_by_noon: 3      # before 12:00 ET — no morning spam
+    max_posts_by_evening: 6    # before 18:00 ET — reserve for afternoon
   youtube:
     enabled: true
     shorts_per_day: 2

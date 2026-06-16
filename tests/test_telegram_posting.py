@@ -72,6 +72,26 @@ def test_decide_post_respects_daily_max():
     assert reason == "daily_max_reached"
 
 
+def test_time_of_day_cap_blocks_morning_spam():
+    cfg = TelegramPostingConfig(max_posts_by_noon=3, max_posts_per_day=8)
+    state = DailyState(date="2026-06-16", post_count=3)
+    morning = datetime(2026, 6, 16, 10, 0, tzinfo=ZoneInfo("America/New_York"))
+    article = {"score": 30}
+    ok, reason = decide_post(article, state, cfg, now=morning)
+    assert ok is False
+    assert reason == "time_of_day_cap"
+
+
 def test_floor_expected_by_noon():
     noon = datetime(2026, 6, 16, 12, 15, tzinfo=ZoneInfo("America/New_York"))
     assert expected_min_posts(noon, ((8, 0), (12, 0), (17, 0))) == 2
+
+
+def test_floor_overrides_time_cap():
+    cfg = TelegramPostingConfig(max_posts_by_noon=3, min_posts_per_day=3)
+    state = DailyState(date="2026-06-16", post_count=0)
+    morning = datetime(2026, 6, 16, 8, 30, tzinfo=ZoneInfo("America/New_York"))
+    article = {"score": 10}
+    ok, reason = decide_post(article, state, cfg, now=morning)
+    assert ok is True
+    assert reason == "daily_floor"

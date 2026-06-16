@@ -35,6 +35,9 @@ class TelegramPostingConfig:
     post_cooldown_minutes: int = 90
     floor_times: Tuple[Tuple[int, int], ...] = ((8, 0), (12, 0), (17, 0))
     timezone: str = "America/New_York"
+    # Cap posts by time-of-day so morning news cannot use the full daily budget.
+    max_posts_by_noon: int = 3
+    max_posts_by_evening: int = 6
 
     @classmethod
     def from_config(cls, config: dict) -> "TelegramPostingConfig":
@@ -60,6 +63,8 @@ class TelegramPostingConfig:
             post_cooldown_minutes=int(tg.get("post_cooldown_minutes", 90)),
             floor_times=tuple(floor_times) if floor_times else ((8, 0), (12, 0), (17, 0)),
             timezone=automation.get("timezone", "America/New_York"),
+            max_posts_by_noon=int(tg.get("max_posts_by_noon", 3)),
+            max_posts_by_evening=int(tg.get("max_posts_by_evening", 6)),
         )
 
 
@@ -126,6 +131,16 @@ def expected_min_posts(now: datetime, floor_times: Tuple[Tuple[int, int], ...]) 
     return needed
 
 
+def max_posts_for_time(now: datetime, cfg: TelegramPostingConfig) -> int:
+    """Spread posts across the day — reserve slots for afternoon/evening."""
+    hour = now.hour
+    if hour < 12:
+        return min(cfg.max_posts_by_noon, cfg.max_posts_per_day)
+    if hour < 18:
+        return min(cfg.max_posts_by_evening, cfg.max_posts_per_day)
+    return cfg.max_posts_per_day
+
+
 def decide_post(
     article: Dict,
     state: DailyState,
@@ -148,12 +163,18 @@ def decide_post(
     if state.post_count >= cfg.max_posts_per_day:
         return False, "daily_max_reached"
 
+    now = now or datetime.now(ZoneInfo(cfg.timezone))
+    time_cap = max_posts_for_time(now, cfg)
+    floor_needed = expected_min_posts(now, cfg.floor_times)
+    on_floor = state.post_count < min(floor_needed, cfg.min_posts_per_day)
+
+    if state.post_count >= time_cap and not on_floor:
+        return False, "time_of_day_cap"
+
     if tier == "breaking":
         return True, "breaking_news"
 
-    now = now or datetime.now(ZoneInfo(cfg.timezone))
-    floor_needed = expected_min_posts(now, cfg.floor_times)
-    if state.post_count < min(floor_needed, cfg.min_posts_per_day):
+    if on_floor:
         return True, "daily_floor"
 
     if tier in ("strong", "insight", "breaking"):
