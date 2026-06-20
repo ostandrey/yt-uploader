@@ -33,12 +33,16 @@ sys.path.insert(0, str(ROOT))
 from src.content.crypto_feeds import CryptoNewsFetcher
 from src.content.short_script_generator import ShortScriptGenerator
 from src.media.ffmpeg_short_renderer import FFmpegShortRenderer
+from src.publishers.pending_publish import (
+    add_pending_upload,
+    auto_publish_delay_minutes,
+    auto_publish_enabled,
+)
 from src.publishers.telegram_publisher import TelegramPublisher
 from src.publishers.youtube_publisher import YouTubePublisher
 
 VIDEOS_DIR = ROOT / "data" / "storage" / "coin_wire" / "videos"
 USED_SHORTS_FILE = ROOT / "data" / "storage" / "coin_wire" / "used_short_articles.json"
-PENDING_FILE = ROOT / "data" / "storage" / "coin_wire" / "pending_uploads.json"
 
 DEFAULT_TAGS = [
     "bitcoin", "crypto", "cryptonews", "ethereum", "fed",
@@ -71,18 +75,15 @@ def _save_used_short_hash(article_hash: str) -> None:
     USED_SHORTS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _save_pending(video_id: str, title: str, privacy: str) -> None:
-    PENDING_FILE.parent.mkdir(parents=True, exist_ok=True)
-    pending: list = []
-    if PENDING_FILE.exists():
-        pending = json.loads(PENDING_FILE.read_text(encoding="utf-8"))
-    pending.append({
-        "video_id": video_id,
-        "title": title,
-        "privacy": privacy,
-        "uploaded_at": datetime.now(timezone.utc).isoformat(),
-    })
-    PENDING_FILE.write_text(json.dumps(pending, indent=2), encoding="utf-8")
+def _save_pending(video_id: str, title: str, *, config: dict) -> dict:
+    schedule = auto_publish_enabled(config)
+    delay = auto_publish_delay_minutes(config)
+    return add_pending_upload(
+        video_id,
+        title,
+        schedule_auto_publish=schedule,
+        delay_minutes=delay,
+    )
 
 
 def _pick_article(fetcher: CryptoNewsFetcher) -> dict | None:
@@ -253,19 +254,38 @@ def run_pipeline(
 
     url = YouTubePublisher.short_url(video_id)
     studio = YouTubePublisher.studio_url(video_id)
-    _save_pending(video_id, content["title"], "unlisted")
+    pending_entry = _save_pending(video_id, content["title"], config=config)
     _save_used_short_hash(article["hash"])
 
+    auto_on = auto_publish_enabled(config)
+    delay = auto_publish_delay_minutes(config)
+
     try:
-        TelegramPublisher().notify_owner(
-            "Coin Wire Short ready for review (UNLISTED):\n"
-            f"{url}\n\n"
-            f"Title: {content['title']}\n"
-            f"Studio: {studio}\n"
-            + (f"Thumbnail: {thumb_path}\n" if thumb_path.exists() else "")
-            + "\nTo publish:\n"
-            f"python upload_coin_wire_short.py --publish {video_id}"
-        )
+        tg = TelegramPublisher()
+        if pending_entry.get("status") == "scheduled":
+            publish_at = pending_entry.get("publish_at", "")[:16].replace("T", " ")
+            tg.notify_owner(
+                "Coin Wire Short uploaded (UNLISTED, auto-publish scheduled):\n"
+                f"{url}\n\n"
+                f"Title: {content['title']}\n"
+                f"Goes PUBLIC ~{delay} min after upload (~{publish_at} UTC)\n"
+                f"Studio: {studio}\n\n"
+                "Cancel auto-publish:\n"
+                f"/hold {video_id}\n"
+                "/autopublish off\n\n"
+                "Publish now:\n"
+                f"/publish {video_id}"
+            )
+        else:
+            tg.notify_owner(
+                "Coin Wire Short ready for review (UNLISTED):\n"
+                f"{url}\n\n"
+                f"Title: {content['title']}\n"
+                f"Studio: {studio}\n"
+                + (f"Thumbnail: {thumb_path}\n" if thumb_path.exists() else "")
+                + "\nTo publish:\n"
+                f"python upload_coin_wire_short.py --publish {video_id}"
+            )
     except Exception as exc:
         print(f"Telegram notify failed: {exc}")
 
@@ -273,13 +293,24 @@ def run_pipeline(
         "status": "uploaded",
         "video_id": video_id,
         "url": url,
+        "auto_publish": auto_on,
     })
     print(f"\nUploaded (unlisted): {url}")
-    print(f"Approve: python upload_coin_wire_short.py --publish {video_id}")
+    if auto_on:
+        print(f"Auto-publish in ~{delay} min (disable: YOUTUBE_AUTO_PUBLISH=0)")
+    else:
+        print(f"Approve: python upload_coin_wire_short.py --publish {video_id}")
     return result
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+            sys.stderr.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(description="Coin Wire full automation pipeline")
     parser.add_argument("--skip-upload", action="store_true", help="Render only")
     parser.add_argument(

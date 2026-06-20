@@ -226,7 +226,7 @@ def run_smart_post(
             market_line=market_line,
             include_insight=include_insight,
         )
-        buttons = [{"text": "Read full story →", "url": article["link"]}]
+        buttons = [{"text": "Read full story", "url": article["link"]}]
 
         if dry_run:
             return {

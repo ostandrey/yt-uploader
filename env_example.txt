@@ -11,6 +11,10 @@ YOUTUBE_CRYPTO_CLIENT_SECRET=
 # Local: tokens/coin_wire_token.json after setup_youtube_oauth.py
 # Railway: paste full JSON as YOUTUBE_CRYPTO_TOKEN_JSON (or mount /app/tokens volume)
 # YOUTUBE_CRYPTO_TOKEN_JSON={"token":"...","refresh_token":"...",...}
+# Auto-publish Shorts PUBLIC after upload (kill switch):
+# YOUTUBE_AUTO_PUBLISH=0   # hard lock OFF (overrides bot)
+# YOUTUBE_AUTO_PUBLISH=1   # hard lock ON (overrides bot)
+# Or use Telegram bot: /autopublish off | /autopublish on
 
 # Stock media
 PEXELS_API_KEY=

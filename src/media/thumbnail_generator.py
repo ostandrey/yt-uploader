@@ -357,7 +357,7 @@ def create_vertical_cover(title: str, output_path: Path) -> Path:
         _draw_badge(draw, hook.badge, SHORT_WIDTH // 2, 1050, hook.accent, size=160)
 
     _draw_chart(draw, 100, 1250, 880, 520, bullish=hook.direction != "down")
-    draw.text((70, 1820), "Tap to see the full story →", fill=BRAND, font=_font(34, bold=False))
+    draw.text((70, 1820), "Tap to see the full story", fill=BRAND, font=_font(34, bold=False))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path, format="PNG", optimize=True)

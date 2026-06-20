@@ -4,6 +4,7 @@ Telegram publisher for Coin Wire channel and personal notifications.
 
 from __future__ import annotations
 
+import json
 import os
 from typing import List, Optional
 
@@ -46,9 +47,11 @@ class TelegramPublisher:
         if buttons:
             payload["reply_markup"] = {"inline_keyboard": [buttons]}
 
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         response = requests.post(
             f"{self.api_base}/sendMessage",
-            json=payload,
+            data=body,
+            headers={"Content-Type": "application/json; charset=utf-8"},
             timeout=30,
         )
         data = response.json()

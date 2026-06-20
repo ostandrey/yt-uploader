@@ -113,7 +113,7 @@ def main() -> None:
 
         publisher.post_to_channel_html(
             post_text,
-            buttons=[{"text": "Read full story →", "url": article["link"]}],
+            buttons=[{"text": "Read full story", "url": article["link"]}],
         )
         fetcher.mark_posted(article)
         print("Posted to Telegram channel.")

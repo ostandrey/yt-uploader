@@ -57,6 +57,10 @@ publishing:
     shorts_per_day: 2
     upload_privacy: "unlisted"
     auto_upload: true
+    auto_publish_scheduled: true   # publish PUBLIC after delay (kill switch below)
+    auto_publish_delay_minutes: 30  # let YouTube finish processing
+    publish_poll_minutes: 5        # worker checks queue every N min
+    bot_poll_seconds: 20            # listen for /autopublish commands
   tiktok:
     enabled: false
     mode: "manual_crosspost"

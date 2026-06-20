@@ -4,7 +4,7 @@ Coin Wire background worker — runs on Railway or any always-on server.
 
 Schedule (see config/coin_wire.yaml, default America/New_York):
   Telegram news  — smart poll every 30 min (3–8/day, breaking ASAP)
-  YouTube Shorts — 09:00, 18:00 (unlisted upload + Telegram notify)
+  YouTube Shorts — 09:00, 18:00 (unlisted upload, auto-publish after delay)
 
 Usage:
     python coin_wire_worker.py
@@ -58,6 +58,11 @@ def _run_script(script: str, *args: str) -> bool:
     cmd = [PYTHON, str(ROOT / script), *args]
     label = script.replace("_", " ")
     log.info("Running %s ...", label)
+    env = {
+        **os.environ,
+        "PYTHONIOENCODING": "utf-8",
+        "LANG": "C.UTF-8",
+    }
     result = subprocess.run(
         cmd,
         cwd=ROOT,
@@ -65,6 +70,7 @@ def _run_script(script: str, *args: str) -> bool:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
     if result.stdout:
         for line in result.stdout.strip().splitlines():
@@ -82,6 +88,14 @@ def job_telegram() -> None:
 
 def job_short() -> None:
     _run_script("run_coin_wire_pipeline.py")
+
+
+def job_publish_pending() -> None:
+    _run_script("publish_pending_shorts.py")
+
+
+def job_telegram_bot() -> None:
+    _run_script("poll_telegram_commands.py")
 
 
 def job_cleanup() -> None:
@@ -152,6 +166,12 @@ def main() -> None:
     storage_cfg = automation.get("storage", {})
     cleanup_time: str = storage_cfg.get("cleanup_time", "03:00")
     tg_cfg = config.get("publishing", {}).get("telegram", {})
+    yt_cfg = config.get("publishing", {}).get("youtube", {})
+    from src.publishers.pending_publish import auto_publish_enabled
+
+    auto_pub = auto_publish_enabled(config)
+    pub_poll = int(yt_cfg.get("publish_poll_minutes", 5))
+    bot_poll = int(yt_cfg.get("bot_poll_seconds", 20))
 
     log.info("=" * 60)
     log.info("Coin Wire Worker — starting")
@@ -164,6 +184,13 @@ def main() -> None:
         ", ".join(floor_times),
     )
     log.info("Shorts:   %s", ", ".join(short_times))
+    log.info(
+        "Publish:  auto=%s, delay %dm, poll every %dm, bot every %ds",
+        "ON" if auto_pub else "OFF",
+        yt_cfg.get("auto_publish_delay_minutes", 30),
+        pub_poll,
+        bot_poll,
+    )
     log.info("Cleanup:  %s (retain %d days)", cleanup_time, retention_days)
     log.info("News filter: min score %s, max age %sh",
              config.get("content", {}).get("filters", {}).get("short_min_score", 12),
@@ -178,6 +205,22 @@ def main() -> None:
         id="telegram_smart",
         replace_existing=True,
         misfire_grace_time=1800,
+    )
+
+    scheduler.add_job(
+        job_publish_pending,
+        IntervalTrigger(minutes=pub_poll),
+        id="youtube_auto_publish",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
+    scheduler.add_job(
+        job_telegram_bot,
+        IntervalTrigger(seconds=bot_poll),
+        id="telegram_bot_commands",
+        replace_existing=True,
+        misfire_grace_time=30,
     )
 
     for index, time_str in enumerate(short_times):

@@ -33,6 +33,7 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+from src.publishers.pending_publish import add_pending_upload, mark_published
 from src.publishers.telegram_publisher import TelegramPublisher
 from src.publishers.youtube_publisher import YouTubePublisher
 
@@ -97,6 +98,11 @@ def main() -> None:
         help="Make an existing unlisted video PUBLIC",
     )
     parser.add_argument(
+        "--hold",
+        metavar="VIDEO_ID",
+        help="Cancel scheduled auto-publish (keep unlisted)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be uploaded without uploading",
@@ -109,6 +115,7 @@ def main() -> None:
         video_id = args.publish.strip()
         print(f"Publishing {video_id} as PUBLIC...")
         publisher.set_privacy(video_id, "public")
+        mark_published(video_id)
         url = YouTubePublisher.short_url(video_id)
         print(f"Done: {url}")
         try:
@@ -117,6 +124,16 @@ def main() -> None:
             )
         except Exception as exc:
             print(f"Telegram notify failed: {exc}")
+        return
+
+    if args.hold:
+        from src.publishers.pending_publish import hold_scheduled
+
+        video_id = args.hold.strip()
+        if hold_scheduled(video_id):
+            print(f"Held {video_id} — auto-publish cancelled, stays unlisted.")
+        else:
+            print(f"No scheduled entry for {video_id}")
         return
 
     video_path = args.video.resolve()

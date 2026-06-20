@@ -16,5 +16,7 @@ COPY . .
 RUN mkdir -p data/storage/coin_wire/videos data/storage/coin_wire/renders tokens
 
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONIOENCODING=utf-8
+ENV LANG=C.UTF-8
 
 CMD ["python", "coin_wire_worker.py"]
