@@ -6,10 +6,13 @@ from __future__ import annotations
 
 import os
 import random
+import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import requests
+
+from src.media.broll_library import DEFAULT_LIBRARY, pick_local_clip
 
 
 PEXELS_VIDEO_URL = "https://api.pexels.com/videos/search"
@@ -30,13 +33,30 @@ class StockVideoFetcher:
         self,
         pexels_api_key: Optional[str] = None,
         pixabay_api_key: Optional[str] = None,
+        library_path: Optional[Path] = None,
     ):
         self.pexels_api_key = pexels_api_key or os.getenv("PEXELS_API_KEY")
         self.pixabay_api_key = pixabay_api_key or os.getenv("PIXABAY_API_KEY")
+        self.library_path = library_path or DEFAULT_LIBRARY
         self.used_urls: set[str] = set()
+        self.source_stats: Dict[str, int] = {
+            "local": 0,
+            "pexels": 0,
+            "pixabay": 0,
+            "fallback": 0,
+            "chart": 0,
+        }
 
     def reset_used(self) -> None:
         self.used_urls.clear()
+        self.source_stats = {key: 0 for key in self.source_stats}
+
+    def get_source_stats(self) -> Dict[str, int]:
+        return dict(self.source_stats)
+
+    def _record_source(self, source: str) -> None:
+        if source in self.source_stats:
+            self.source_stats[source] += 1
 
     def fetch_videos(
         self,
@@ -187,7 +207,21 @@ class StockVideoFetcher:
         keyword: str,
         orientation: str = "portrait",
         min_height: int = 1080,
+        category: str = "default",
     ) -> Optional[Dict]:
+        local_path = pick_local_clip(category, self.used_urls, self.library_path)
+        if local_path:
+            resolved = str(local_path.resolve())
+            self.used_urls.add(resolved)
+            self._record_source("local")
+            return {
+                "path": resolved,
+                "source": "local",
+                "keyword": keyword,
+                "category": category,
+                "type": "video",
+            }
+
         candidates: List[Dict] = []
         if self.pexels_api_key and self.pexels_api_key != "your_pexels_api_key_here":
             candidates.extend(self._fetch_pexels_keyword(keyword, 20, orientation))
@@ -208,22 +242,32 @@ class StockVideoFetcher:
                 continue
             if video["url"] not in self.used_urls:
                 self.used_urls.add(video["url"])
+                self._record_source(video.get("source", "pexels"))
                 return video
 
         for video in candidates:
             if video["url"] not in self.used_urls:
                 self.used_urls.add(video["url"])
+                self._record_source(video.get("source", "pexels"))
                 return video
 
         video = candidates[0] if candidates else None
         if video:
             self.used_urls.add(video["url"])
+            self._record_source(video.get("source", "pexels"))
         return video
 
     def download_video(self, video: Dict, target: Path, use_cache: bool = False) -> Optional[Path]:
         target.parent.mkdir(parents=True, exist_ok=True)
         if use_cache and target.exists() and target.stat().st_size > 10_000:
             return target
+
+        if video.get("source") == "local":
+            src = Path(video["path"])
+            if src.exists() and src.stat().st_size > 10_000:
+                shutil.copy2(src, target)
+                return target
+            return None
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",

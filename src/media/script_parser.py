@@ -4,9 +4,12 @@ Parse Short scripts into sentences, B-roll search terms, and on-screen stats.
 
 from __future__ import annotations
 
+import random
 import re
 from dataclasses import dataclass
 from typing import List, Optional
+
+from src.media.broll_library import CATEGORY_ALIASES, normalize_category
 
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 WORD_TO_PERCENT = {
@@ -15,31 +18,228 @@ WORD_TO_PERCENT = {
     "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20,
 }
 
-PEXELS_QUERIES = {
-    "bitcoin": "bitcoin chart trading screen monitor",
-    "btc": "bitcoin price chart red falling",
-    "ethereum": "ethereum crypto chart screen",
-    "eth": "ethereum price chart trading",
-    "fed": "interest rate chart economy graph",
-    "federal": "stock market chart trading desk",
-    "reserve": "central bank interest rates data",
-    "rates": "interest rates chart inflation graph",
-    "rate": "federal funds rate chart screen",
-    "market": "stock market ticker trading screen",
-    "crypto": "cryptocurrency trading charts monitor",
-    "cryptocurrency": "crypto trading multiple screens",
-    "trading": "stock trading charts monitor desk",
-    "hawkish": "stock market red chart falling",
-    "policy": "inflation economy data chart screen",
-    "analyst": "financial charts trading monitor",
-    "altcoin": "cryptocurrency exchange trading screen",
-    "track": "crypto news app smartphone chart",
-    "sensitive": "economy stock market data screen",
-    "daily": "financial news alert smartphone",
-    "expected": "stock market analysis chart screen",
-    "unchanged": "interest rates unchanged chart",
-    "lower": "stock market red chart decline",
-    "falling": "bitcoin price falling chart",
+# Multi-variant Pexels queries — one random pick per token per render.
+PEXELS_QUERIES: dict[str, list[str]] = {
+    "bitcoin": [
+        "bitcoin gold coin closeup",
+        "bitcoin chart trading screen monitor",
+        "cryptocurrency trading desk multiple monitors",
+    ],
+    "btc": [
+        "bitcoin price chart red falling",
+        "bitcoin coin spinning macro",
+        "crypto exchange trading floor",
+    ],
+    "ethereum": [
+        "ethereum crypto chart screen",
+        "ethereum blockchain network visualization",
+        "defi protocol dashboard screen",
+    ],
+    "eth": [
+        "ethereum price chart trading",
+        "ethereum coin digital art",
+        "crypto wallet app smartphone",
+    ],
+    "fed": [
+        "federal reserve building exterior",
+        "interest rate chart economy graph",
+        "central bank press conference",
+    ],
+    "federal": [
+        "stock market chart trading desk",
+        "economy inflation data screen",
+        "wall street trading floor",
+    ],
+    "reserve": [
+        "central bank interest rates data",
+        "monetary policy meeting room",
+        "economy news headline screen",
+    ],
+    "rates": [
+        "interest rates chart inflation graph",
+        "bond yield curve screen",
+        "federal funds rate chart screen",
+    ],
+    "rate": [
+        "federal funds rate chart screen",
+        "interest rate decision news",
+        "economy data dashboard",
+    ],
+    "inflation": [
+        "inflation economy data chart screen",
+        "consumer price index graph",
+        "grocery prices rising news",
+    ],
+    "etf": [
+        "etf stock market chart screen",
+        "institutional investor trading desk",
+        "fund flows financial data",
+    ],
+    "market": [
+        "stock market ticker trading screen",
+        "wall street bull statue",
+        "financial district skyline night",
+    ],
+    "crypto": [
+        "cryptocurrency trading charts monitor",
+        "crypto exchange app smartphone",
+        "blockchain network nodes animation",
+    ],
+    "cryptocurrency": [
+        "crypto trading multiple screens",
+        "digital currency coins closeup",
+        "blockchain technology abstract",
+    ],
+    "trading": [
+        "stock trading charts monitor desk",
+        "day trader multiple screens",
+        "financial charts candlestick screen",
+    ],
+    "hawkish": [
+        "stock market red chart falling",
+        "bear market decline graph",
+        "trader worried looking screen",
+    ],
+    "policy": [
+        "inflation economy data chart screen",
+        "government policy document signing",
+        "economic summit conference",
+    ],
+    "analyst": [
+        "financial charts trading monitor",
+        "business analyst laptop data",
+        "market research report screen",
+    ],
+    "altcoin": [
+        "cryptocurrency exchange trading screen",
+        "altcoin portfolio app",
+        "crypto market cap ranking",
+    ],
+    "sec": [
+        "sec regulation courthouse",
+        "legal documents financial compliance",
+        "government hearing courtroom",
+    ],
+    "regulation": [
+        "financial regulation documents",
+        "compliance audit office",
+        "law gavel courtroom",
+    ],
+    "lawsuit": [
+        "courtroom judge gavel",
+        "legal papers signing",
+        "lawyer office meeting",
+    ],
+    "hack": [
+        "cybersecurity hacker screen code",
+        "data breach alert notification",
+        "network security firewall",
+    ],
+    "exploit": [
+        "cyber attack warning screen",
+        "security vulnerability code",
+        "hacker typing dark room",
+    ],
+    "defi": [
+        "defi protocol dashboard",
+        "decentralized finance app",
+        "liquidity pool animation",
+    ],
+    "tokenization": [
+        "digital asset token blockchain",
+        "real estate tokenization concept",
+        "smart contract code screen",
+    ],
+    "stablecoin": [
+        "stablecoin dollar peg chart",
+        "usdc usdt crypto coins",
+        "digital dollar concept",
+    ],
+    "treasury": [
+        "us treasury building",
+        "government bonds chart",
+        "national debt graph screen",
+    ],
+    "track": [
+        "crypto news app smartphone",
+        "financial alert notification phone",
+        "market tracker dashboard",
+    ],
+    "sensitive": [
+        "economy stock market data screen",
+        "volatile market chart red green",
+        "trader stressed multiple monitors",
+    ],
+    "daily": [
+        "financial news alert smartphone",
+        "morning market briefing laptop",
+        "news headline scroll screen",
+    ],
+    "expected": [
+        "stock market analysis chart screen",
+        "earnings forecast graph",
+        "analyst prediction dashboard",
+    ],
+    "unchanged": [
+        "interest rates unchanged chart",
+        "flat market sideways trading",
+        "steady economy data screen",
+    ],
+    "lower": [
+        "stock market red chart decline",
+        "bitcoin price falling chart",
+        "bearish candlestick pattern",
+    ],
+    "falling": [
+        "bitcoin price falling chart",
+        "red stock market decline",
+        "crypto crash news headline",
+    ],
+}
+
+CATEGORY_FALLBACKS: dict[str, list[str]] = {
+    "_macro": [
+        "stock market chart trading screen",
+        "interest rate chart economy graph",
+        "wall street financial district",
+        "economy news data dashboard",
+    ],
+    "_default": [
+        "financial charts trading monitor",
+        "business news smartphone app",
+        "stock market ticker screen",
+        "cryptocurrency trading desk",
+    ],
+}
+
+TOKEN_CATEGORIES: dict[str, str] = {
+    **{k: v for k, v in CATEGORY_ALIASES.items()},
+    "bitcoin": "bitcoin",
+    "btc": "bitcoin",
+    "ethereum": "ethereum",
+    "eth": "ethereum",
+    "altcoin": "ethereum",
+    "crypto": "bitcoin",
+    "cryptocurrency": "bitcoin",
+    "trading": "macro",
+    "hawkish": "macro",
+    "policy": "macro",
+    "analyst": "macro",
+    "track": "macro",
+    "sensitive": "macro",
+    "daily": "macro",
+    "expected": "macro",
+    "unchanged": "macro",
+    "lower": "macro",
+    "falling": "bitcoin",
+    "sec": "regulation",
+    "regulation": "regulation",
+    "lawsuit": "regulation",
+    "hack": "security",
+    "exploit": "security",
+    "defi": "defi",
+    "tokenization": "defi",
+    "stablecoin": "defi",
 }
 
 
@@ -49,6 +249,13 @@ class StatOverlay:
     keyword: str
     display_sec: float = 3.0
     show_from_start: bool = False
+
+
+@dataclass
+class BrollTerm:
+    query: str
+    category: str
+    token: str = ""
 
 
 def split_sentences(text: str) -> List[str]:
@@ -61,28 +268,59 @@ def _tokenize_for_search(sentence: str) -> List[str]:
     return tokens
 
 
-def sentence_search_keywords(sentence: str) -> List[str]:
-    """Return 1-3 Pexels-friendly queries derived from a sentence."""
+def token_category(token: str) -> str:
+    return normalize_category(TOKEN_CATEGORIES.get(token, token))
+
+
+def pick_pexels_query(token: str) -> BrollTerm:
+    """Pick a random Pexels query and library category for a token."""
+    variants = PEXELS_QUERIES.get(token)
+    if variants:
+        return BrollTerm(
+            query=random.choice(variants),
+            category=token_category(token),
+            token=token,
+        )
+    return pick_fallback_query("macro" if token in ("fed", "federal", "reserve") else "default")
+
+
+def pick_fallback_query(kind: str = "default") -> BrollTerm:
+    key = "_macro" if kind == "macro" else "_default"
+    category = "macro" if kind == "macro" else "default"
+    return BrollTerm(
+        query=random.choice(CATEGORY_FALLBACKS[key]),
+        category=category,
+        token=kind,
+    )
+
+
+def sentence_broll_terms(sentence: str) -> List[BrollTerm]:
+    """Return 1-3 B-roll search terms derived from a sentence."""
     tokens = _tokenize_for_search(sentence)
-    queries: List[str] = []
-    seen: set[str] = set()
+    terms: List[BrollTerm] = []
+    seen_tokens: set[str] = set()
 
     for token in tokens:
-        if token in PEXELS_QUERIES and token not in seen:
-            queries.append(PEXELS_QUERIES[token])
-            seen.add(token)
+        if token in PEXELS_QUERIES and token not in seen_tokens:
+            terms.append(pick_pexels_query(token))
+            seen_tokens.add(token)
 
-    if not queries:
+    if not terms:
         if any(t in tokens for t in ("bitcoin", "btc", "crypto")):
-            queries.append("bitcoin chart trading screen")
+            terms.append(pick_pexels_query("bitcoin"))
         elif any(t in tokens for t in ("fed", "federal", "reserve", "rates")):
-            queries.append("interest rate chart economy graph")
+            terms.append(pick_fallback_query("macro"))
         elif any(t in tokens for t in ("ethereum", "eth")):
-            queries.append("ethereum price chart trading")
+            terms.append(pick_pexels_query("ethereum"))
         else:
-            queries.append("stock market chart trading screen")
+            terms.append(pick_fallback_query("default"))
 
-    return queries[:3]
+    return terms[:3]
+
+
+def sentence_search_keywords(sentence: str) -> List[str]:
+    """Return 1-3 Pexels-friendly queries derived from a sentence."""
+    return [t.query for t in sentence_broll_terms(sentence)]
 
 
 def plan_broll_segments(
@@ -95,7 +333,7 @@ def plan_broll_segments(
     segments: List[dict] = []
 
     for sentence, sent_dur in zip(sentences, sentence_durations):
-        keywords = sentence_search_keywords(sentence)
+        terms = sentence_broll_terms(sentence)
         remaining = max(sent_dur, min_sec)
         keyword_index = 0
 
@@ -104,8 +342,10 @@ def plan_broll_segments(
             if remaining < min_sec + 0.1:
                 clip_dur = remaining
 
+            term = terms[keyword_index % len(terms)]
             segments.append({
-                "keyword": keywords[keyword_index % len(keywords)],
+                "keyword": term.query,
+                "category": term.category,
                 "duration": round(clip_dur, 2),
                 "sentence": sentence,
             })

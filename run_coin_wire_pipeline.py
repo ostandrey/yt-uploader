@@ -170,8 +170,8 @@ def run_pipeline(
         title=content["title"],
         output_path=video_path,
         keywords=content["keywords"],
-        voice=settings.get("voice", "en-US-AndrewNeural"),
-        rate="+5%",
+        voice=settings.get("voice", "en-US-ChristopherNeural"),
+        rate=settings.get("voice_rate", "-8%"),
         pitch="-2Hz",
         work_dir=work_dir,
     )

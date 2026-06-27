@@ -347,6 +347,7 @@ def _fetch_broll_clips(
     min_fetch_height = 1920 if prefer_hd else 1080
     for index, segment in enumerate(segments):
         keyword = segment["keyword"]
+        category = segment.get("category", "default")
         duration = segment["duration"]
         # 1) Stock photos — only when explicitly requested
         if visual_mode in ("mixed", "stock_image", "image") and image_fetcher:
@@ -368,22 +369,26 @@ def _fetch_broll_clips(
         use_stock_video = visual_mode in ("stock", "stock_video", "mixed")
         if use_stock_video:
             video_meta = fetcher.fetch_video_for_keyword(
-                keyword, min_height=min_fetch_height
+                keyword,
+                min_height=min_fetch_height,
+                category=category,
             )
-            if video_meta and prefer_hd and video_meta.get("height", 0) < min_stock_height:
-                video_meta = None
+            if video_meta and video_meta.get("source") != "local":
+                if prefer_hd and video_meta.get("height", 0) < min_stock_height:
+                    video_meta = None
             if video_meta:
                 video_raw = raw_dir / f"seg_{index:02d}.mp4"
                 downloaded = fetcher.download_video(video_meta, video_raw)
                 if downloaded:
                     w, h = probe_video_size(downloaded)
-                    if h >= min_stock_height or visual_mode in ("stock", "stock_video"):
+                    if h >= min_stock_height or visual_mode in ("stock", "stock_video") or video_meta.get("source") == "local":
                         norm = work_dir / f"norm_{index:02d}.mp4"
                         _normalize_clip(downloaded, norm, duration, clip_index=index)
                         clips.append(norm)
+                        source = video_meta.get("source", "pexels")
                         print(
                             f"      [{index + 1}/{len(segments)}] {keyword} ({duration:.1f}s)"
-                            f" — video {w}x{h}"
+                            f" — {source} {w}x{h}"
                         )
                         continue
                     print(f"      [{index + 1}/{len(segments)}] video {w}x{h} too small")
@@ -391,6 +396,7 @@ def _fetch_broll_clips(
         fallback = work_dir / f"chart_{index:02d}.mp4"
         create_chart_card_video(keyword, fallback, duration)
         clips.append(fallback)
+        fetcher._record_source("chart")
         print(f"      [{index + 1}/{len(segments)}] {keyword} — sharp chart ({duration:.1f}s)")
     return clips
 
@@ -482,6 +488,15 @@ class FFmpegShortRenderer:
             visual_mode=self.visual_mode,
             image_fetcher=self.image_fetcher,
         )
+        broll_sources = self.video_fetcher.get_source_stats()
+        print(
+            "      B-roll sources: "
+            f"local={broll_sources.get('local', 0)} "
+            f"pexels={broll_sources.get('pexels', 0)} "
+            f"pixabay={broll_sources.get('pixabay', 0)} "
+            f"fallback={broll_sources.get('fallback', 0)} "
+            f"chart={broll_sources.get('chart', 0)}"
+        )
         hook_clip = work_dir / "hook_intro.mp4"
         _create_hook_intro_clip(title, hook_clip, duration_sec=HOOK_INTRO_SEC)
         print(f"      Hook: sharp branded intro ({HOOK_INTRO_SEC}s)")
@@ -543,6 +558,7 @@ class FFmpegShortRenderer:
             "voice": voice,
             "sentences": len(sentences),
             "broll_segments": len(segments),
+            "broll_sources": broll_sources,
             "stat_overlays": [o.text for o in stat_overlays],
             "whisper": use_whisper and len(word_entries) > 0,
             "hook_from_start": True,
