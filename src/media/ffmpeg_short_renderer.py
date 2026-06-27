@@ -20,6 +20,7 @@ from src.media.sfx_mixer import mix_sfx, plan_sfx_events
 from src.media.stock_image_fetcher import StockImageFetcher
 from src.media.stock_video_fetcher import StockVideoFetcher
 from src.media.text_overlay import apply_final_layers, create_outro_png
+from src.content.market_ticker import fetch_market_quotes
 from src.media.thumbnail_generator import create_short_thumbnail, create_vertical_cover
 from src.media.video_encode import (
     AUDIO_ENCODE_ARGS,
@@ -427,6 +428,7 @@ class FFmpegShortRenderer:
         pitch: str = "-2Hz",
         work_dir: Optional[Path] = None,
         use_whisper: bool = False,
+        price_overlay: bool = True,
     ) -> Path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         work_dir = work_dir or output_path.parent / "renders" / "latest"
@@ -501,14 +503,25 @@ class FFmpegShortRenderer:
         _create_hook_intro_clip(title, hook_clip, duration_sec=HOOK_INTRO_SEC)
         print(f"      Hook: sharp branded intro ({HOOK_INTRO_SEC}s)")
         print("[5/7] Concatenating + outro...")
+        body_concat = work_dir / "body_concat.mp4"
+        if len(body_clips) > 1:
+            _xfade_clips(body_clips, body_concat, transition_sec=TRANSITION_SEC)
+            print(f"      Body: {len(body_clips)} clips with xfade ({TRANSITION_SEC}s)")
+        elif body_clips:
+            shutil.copy2(body_clips[0], body_concat)
+        else:
+            body_concat = hook_clip
         concat_path = work_dir / "concat.mp4"
-        _xfade_clips([hook_clip, *body_clips], concat_path, transition_sec=TRANSITION_SEC)
+        if body_concat != hook_clip:
+            _xfade_clips([hook_clip, body_concat], concat_path, transition_sec=TRANSITION_SEC)
+        else:
+            shutil.copy2(hook_clip, concat_path)
         outro_clip = work_dir / "outro.mp4"
         outro_summary = extract_outro_summary(script)
         _create_outro_clip(outro_clip, duration_sec=OUTRO_DURATION_SEC, summary=outro_summary)
         print(f"      Outro: {outro_summary[:50]}...")
         concat_final = work_dir / "concat_with_outro.mp4"
-        _concat_hard([concat_path, outro_clip], concat_final)
+        _xfade_clips([concat_path, outro_clip], concat_final, transition_sec=TRANSITION_SEC)
         print("[6/7] Mixing audio + brand overlays...")
         stat_overlays = extract_stat_overlays(script)
         audio_extended = work_dir / "voiceover_extended.mp3"
@@ -536,6 +549,10 @@ class FFmpegShortRenderer:
         _merge_audio_video(concat_final, mixed_path, with_audio)
         if stat_overlays:
             print(f"      Stats: {[o.text for o in stat_overlays]}")
+        price_quotes = fetch_market_quotes() if price_overlay else []
+        if price_quotes:
+            line = " · ".join(q.format_short() for q in price_quotes)
+            print(f"      Price ticker: {line}")
         print("[7/7] Brand + subtitles (single export)...")
         if "Dialogue:" not in ass_content:
             raise RuntimeError("Karaoke ASS has no dialogue events")
@@ -546,6 +563,7 @@ class FFmpegShortRenderer:
             word_entries,
             output_path,
             work_dir,
+            price_quotes=price_quotes or None,
         )
         thumb_path = work_dir / "thumbnail.jpg"
         create_short_thumbnail(title, thumb_path)
@@ -560,6 +578,9 @@ class FFmpegShortRenderer:
             "broll_segments": len(segments),
             "broll_sources": broll_sources,
             "stat_overlays": [o.text for o in stat_overlays],
+            "price_ticker": (
+                [q.format_short() for q in price_quotes] if price_quotes else []
+            ),
             "whisper": use_whisper and len(word_entries) > 0,
             "hook_from_start": True,
             "outro_sec": OUTRO_DURATION_SEC,

@@ -174,6 +174,7 @@ def run_pipeline(
         rate=settings.get("voice_rate", "-8%"),
         pitch="-2Hz",
         work_dir=work_dir,
+        price_overlay=settings.get("price_overlay", True),
     )
 
     meta_path = work_dir / "metadata.json"

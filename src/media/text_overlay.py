@@ -17,8 +17,12 @@ from src.media.script_parser import StatOverlay
 SHORT_WIDTH = 1080
 SHORT_HEIGHT = 1920
 BRAND_COLOR = (0, 220, 150)
+POSITIVE_COLOR = (80, 220, 120)
+NEGATIVE_COLOR = (255, 90, 90)
 STAT_FADE_SEC = 0.35
 STAT_SLIDE_PX = 28
+TICKER_BAR_Y = 1760
+TICKER_BAR_H = 100
 
 
 def _stat_overlay_y(start: float, fade: float) -> str:
@@ -168,6 +172,76 @@ def create_outro_png(output_path: Path, summary: str = "") -> Path:
     return output_path
 
 
+def create_price_ticker_png(
+    quotes: list,
+    output_path: Path,
+) -> Path:
+    """Bottom bar with live BTC/ETH prices — full-frame transparent PNG."""
+    from src.content.market_ticker import MarketQuote
+
+    image = Image.new("RGBA", (SHORT_WIDTH, SHORT_HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+
+    font_main = _load_font(30, bold=True)
+    font_sep = _load_font(30, bold=False)
+
+    bar_y = TICKER_BAR_Y
+    bar_h = TICKER_BAR_H
+    draw.rounded_rectangle(
+        [(24, bar_y), (SHORT_WIDTH - 24, bar_y + bar_h)],
+        radius=14,
+        fill=(8, 12, 22, 210),
+        outline=(*BRAND_COLOR, 180),
+        width=2,
+    )
+
+    x = 48
+    center_y = bar_y + bar_h // 2
+    typed: list[MarketQuote] = list(quotes)
+
+    for index, quote in enumerate(typed):
+        if index > 0:
+            sep = "·"
+            sb = draw.textbbox((0, 0), sep, font=font_sep)
+            sep_h = sb[3] - sb[1]
+            draw.text((x, center_y - sep_h // 2 - sb[1]), sep, fill=(140, 150, 170, 220), font=font_sep)
+            x += sb[2] - sb[0] + 16
+
+        price_str = (
+            f"${quote.price_usd:,.0f}"
+            if quote.price_usd >= 1000
+            else f"${quote.price_usd:,.2f}"
+        )
+        symbol_part = f"{quote.symbol} {price_str} "
+        sym_b = draw.textbbox((0, 0), symbol_part, font=font_main)
+        sym_h = sym_b[3] - sym_b[1]
+        draw.text(
+            (x, center_y - sym_h // 2 - sym_b[1]),
+            symbol_part,
+            fill=(255, 255, 255, 255),
+            font=font_main,
+        )
+        x += sym_b[2] - sym_b[0]
+
+        if quote.change_24h_pct is not None:
+            sign = "+" if quote.change_24h_pct >= 0 else ""
+            change_text = f"({sign}{quote.change_24h_pct:.1f}%)"
+            change_color = POSITIVE_COLOR if quote.change_24h_pct >= 0 else NEGATIVE_COLOR
+            ch_b = draw.textbbox((0, 0), change_text, font=font_main)
+            ch_h = ch_b[3] - ch_b[1]
+            draw.text(
+                (x, center_y - ch_h // 2 - ch_b[1]),
+                change_text,
+                fill=(*change_color, 255),
+                font=font_main,
+            )
+            x += ch_b[2] - ch_b[0] + 20
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output_path)
+    return output_path
+
+
 def create_watermark_png(output_path: Path) -> Path:
     """Small persistent top-left watermark."""
     image = Image.new("RGBA", (SHORT_WIDTH, SHORT_HEIGHT), (0, 0, 0, 0))
@@ -279,8 +353,9 @@ def apply_final_layers(
     word_entries: List[tuple[float, float, str]],
     output_path: Path,
     work_dir: Path,
+    price_quotes: Optional[list] = None,
 ) -> Path:
-    """Watermark + stats + karaoke subs in a single high-quality export."""
+    """Watermark + stats + optional price ticker + karaoke subs in one export."""
     from src.media.video_encode import FINAL_ENCODE_ARGS
 
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -333,6 +408,16 @@ def apply_final_layers(
             f"enable='between(t,{start:.3f},{end:.3f})':format=auto[{out_label}]"
         )
         prev = out_label
+        input_index += 1
+
+    if price_quotes:
+        ticker_path = work_dir / "price_ticker.png"
+        create_price_ticker_png(price_quotes, ticker_path)
+        extra_inputs.append(ticker_path)
+        filter_parts.append(
+            f"[{prev}][{input_index}:v]overlay=0:0:format=auto[vticker]"
+        )
+        prev = "vticker"
         input_index += 1
 
     local_ass = work_dir / "burn_subs.ass"

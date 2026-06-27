@@ -11,6 +11,7 @@ settings:
   voiceover: true
   voice: "en-US-ChristopherNeural"
   voice_rate: "-8%"
+  price_overlay: true
   video_format: "9:16"
   resolution: "1080x1920"
   video_duration: "25-40"
