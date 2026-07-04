@@ -205,10 +205,13 @@ def run_pipeline(
     if skip_upload:
         _save_used_short_hash(article["hash"])
         try:
+            from src.publishers.telegram_publisher import control_keyboard
+
             TelegramPublisher().notify_owner(
                 "Coin Wire Short rendered (upload skipped):\n"
                 f"{video_path}\n\n"
-                f"Title: {content['title']}"
+                f"Title: {content['title']}",
+                buttons=control_keyboard(),
             )
         except Exception as exc:
             print(f"Telegram notify failed: {exc}")
@@ -226,7 +229,9 @@ def run_pipeline(
         )
         print(msg)
         try:
-            TelegramPublisher().notify_owner(msg)
+            from src.publishers.telegram_publisher import control_keyboard
+
+            TelegramPublisher().notify_owner(msg, buttons=control_keyboard())
         except Exception as exc:
             print(f"Telegram notify failed: {exc}")
         result["status"] = "rendered_no_youtube"
@@ -262,6 +267,8 @@ def run_pipeline(
     delay = auto_publish_delay_minutes(config)
 
     try:
+        from src.publishers.telegram_publisher import control_keyboard
+
         tg = TelegramPublisher()
         if pending_entry.get("status") == "scheduled":
             publish_at = pending_entry.get("publish_at", "")[:16].replace("T", " ")
@@ -270,12 +277,8 @@ def run_pipeline(
                 f"{url}\n\n"
                 f"Title: {content['title']}\n"
                 f"Goes PUBLIC ~{delay} min after upload (~{publish_at} UTC)\n"
-                f"Studio: {studio}\n\n"
-                "Cancel auto-publish:\n"
-                f"/hold {video_id}\n"
-                "/autopublish off\n\n"
-                "Publish now:\n"
-                f"/publish {video_id}"
+                f"Studio: {studio}",
+                buttons=control_keyboard(video_id),
             )
         else:
             tg.notify_owner(
@@ -283,9 +286,8 @@ def run_pipeline(
                 f"{url}\n\n"
                 f"Title: {content['title']}\n"
                 f"Studio: {studio}\n"
-                + (f"Thumbnail: {thumb_path}\n" if thumb_path.exists() else "")
-                + "\nTo publish:\n"
-                f"python upload_coin_wire_short.py --publish {video_id}"
+                + (f"Thumbnail: {thumb_path}\n" if thumb_path.exists() else ""),
+                buttons=control_keyboard(video_id),
             )
     except Exception as exc:
         print(f"Telegram notify failed: {exc}")
@@ -331,7 +333,12 @@ def main() -> None:
     except Exception as exc:
         print(f"Pipeline failed: {exc}")
         try:
-            TelegramPublisher().notify_owner(f"Coin Wire pipeline FAILED:\n{exc}")
+            from src.publishers.telegram_publisher import control_keyboard
+
+            TelegramPublisher().notify_owner(
+                f"Coin Wire pipeline FAILED:\n{exc}",
+                buttons=control_keyboard(),
+            )
         except Exception:
             pass
         sys.exit(1)

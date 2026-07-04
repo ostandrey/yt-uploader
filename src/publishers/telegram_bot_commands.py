@@ -1,5 +1,6 @@
 """
 Telegram bot commands for owner — control auto-publish without Railway UI.
+Supports slash commands and inline button callbacks.
 """
 
 from __future__ import annotations
@@ -16,7 +17,6 @@ from src.publishers.pending_publish import (
     hold_scheduled,
     load_pending,
     mark_published,
-    publish_due_shorts,
 )
 from src.publishers.runtime_settings import (
     auto_publish_resolved,
@@ -25,7 +25,7 @@ from src.publishers.runtime_settings import (
     set_bot_update_offset,
     set_runtime_auto_publish,
 )
-from src.publishers.telegram_publisher import TelegramPublisher
+from src.publishers.telegram_publisher import TelegramPublisher, control_keyboard
 from src.publishers.youtube_publisher import YouTubePublisher
 
 log = logging.getLogger(__name__)
@@ -39,7 +39,9 @@ HELP_TEXT = """Coin Wire bot commands
 /resume — same as autopublish on
 /hold VIDEO_ID — keep one Short unlisted
 /publish VIDEO_ID — publish now (skip wait)
-/help — this message"""
+/help — this message
+
+Or use the buttons under notifications."""
 
 
 def _owner_chat_id() -> str:
@@ -52,8 +54,13 @@ def _bot_token() -> str:
     return (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
 
 
-def _reply(chat_id: str, text: str) -> None:
-    TelegramPublisher()._send(chat_id, text)
+def _publisher() -> TelegramPublisher:
+    return TelegramPublisher()
+
+
+def _reply(chat_id: str, text: str, *, with_controls: bool = True) -> None:
+    buttons = control_keyboard() if with_controls else None
+    _publisher()._send(chat_id, text, buttons=buttons)
 
 
 def _status_text() -> str:
@@ -83,7 +90,6 @@ def _status_text() -> str:
             lines.append(f"    at {entry['publish_at'][:16].replace('T', ' ')} UTC")
     if len(scheduled) > 5:
         lines.append(f"  ... +{len(scheduled) - 5} more")
-    lines.extend(["", "Commands: /autopublish off | on | /hold ID | /publish ID"])
     return "\n".join(lines)
 
 
@@ -121,13 +127,13 @@ def _publish_now(chat_id: str, video_id: str) -> None:
 
 def _hold_video(chat_id: str, video_id: str) -> None:
     if hold_scheduled(video_id):
-        _reply(chat_id, f"Held {video_id} — will stay unlisted.")
+        _reply(chat_id, f"Held {video_id} - will stay unlisted.")
     else:
         _reply(chat_id, f"No scheduled auto-publish found for {video_id}.")
 
 
 def handle_command(text: str, chat_id: str) -> bool:
-    """Process one command. Returns True if handled."""
+    """Process one slash command. Returns True if handled."""
     if str(chat_id) != _owner_chat_id():
         log.warning("Ignored command from unauthorized chat %s", chat_id)
         return False
@@ -182,8 +188,60 @@ def handle_command(text: str, chat_id: str) -> bool:
     return False
 
 
+def handle_callback(data: str, chat_id: str, callback_id: str) -> bool:
+    """Process an inline button press. Returns True if handled."""
+    pub = _publisher()
+    if str(chat_id) != _owner_chat_id():
+        pub.answer_callback(callback_id, "Unauthorized")
+        log.warning("Ignored callback from unauthorized chat %s", chat_id)
+        return False
+
+    payload = (data or "").strip()
+    if not payload.startswith("cw:"):
+        pub.answer_callback(callback_id)
+        return False
+
+    parts = payload.split(":")
+    action = parts[1] if len(parts) > 1 else ""
+
+    try:
+        if action == "status":
+            pub.answer_callback(callback_id, "Status")
+            _reply(chat_id, _status_text())
+            return True
+
+        if action == "ap" and len(parts) >= 3:
+            enabled = parts[2] == "on"
+            pub.answer_callback(callback_id, "ON" if enabled else "OFF")
+            _set_auto_publish(chat_id, enabled)
+            return True
+
+        if action == "pub" and len(parts) >= 3:
+            video_id = parts[2]
+            pub.answer_callback(callback_id, "Publishing...")
+            try:
+                _publish_now(chat_id, video_id)
+            except Exception as exc:
+                _reply(chat_id, f"Publish failed: {exc}")
+            return True
+
+        if action == "hold" and len(parts) >= 3:
+            video_id = parts[2]
+            pub.answer_callback(callback_id, "Holding...")
+            _hold_video(chat_id, video_id)
+            return True
+    except Exception as exc:
+        log.exception("Callback failed: %s", exc)
+        pub.answer_callback(callback_id, "Error")
+        _reply(chat_id, f"Button action failed: {exc}")
+        return True
+
+    pub.answer_callback(callback_id)
+    return False
+
+
 def poll_commands_once() -> int:
-    """Fetch and process pending bot commands. Returns number handled."""
+    """Fetch and process pending bot commands/callbacks. Returns number handled."""
     token = _bot_token()
     owner = _owner_chat_id()
     if not token or not owner:
@@ -192,7 +250,11 @@ def poll_commands_once() -> int:
     offset = get_bot_update_offset()
     response = requests.get(
         f"https://api.telegram.org/bot{token}/getUpdates",
-        params={"offset": offset, "timeout": 0, "allowed_updates": ["message"]},
+        params={
+            "offset": offset,
+            "timeout": 0,
+            "allowed_updates": '["message","callback_query"]',
+        },
         timeout=15,
     )
     data = response.json()
@@ -205,6 +267,18 @@ def poll_commands_once() -> int:
     for update in data.get("result", []):
         update_id = int(update.get("update_id", 0))
         max_id = max(max_id, update_id + 1)
+
+        callback = update.get("callback_query")
+        if callback:
+            cb_id = str(callback.get("id", ""))
+            cb_data = callback.get("data") or ""
+            message = callback.get("message") or {}
+            chat = message.get("chat") or callback.get("from") or {}
+            chat_id = str(chat.get("id", ""))
+            if handle_callback(cb_data, chat_id, cb_id):
+                handled += 1
+            continue
+
         message = update.get("message") or {}
         chat = message.get("chat") or {}
         chat_id = str(chat.get("id", ""))

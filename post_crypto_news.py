@@ -73,10 +73,13 @@ def main() -> None:
             )
             print(f"Today: {result['post_count']} post(s)")
             if not args.dry_run:
+                from src.publishers.telegram_publisher import control_keyboard
+
                 publisher.notify_owner(
                     f"Coin Wire TG: {result['tier']} post ({result['score']})\n"
                     f"{result['title'][:80]}\n"
-                    f"Today: {result['post_count']}/day"
+                    f"Today: {result['post_count']}/day",
+                    buttons=control_keyboard(),
                 )
         else:
             print(
@@ -119,8 +122,11 @@ def main() -> None:
         print("Posted to Telegram channel.")
 
     if not args.dry_run:
+        from src.publishers.telegram_publisher import control_keyboard
+
         publisher.notify_owner(
-            f"Coin Wire: posted {len(articles)} crypto news update(s) to the channel."
+            f"Coin Wire: posted {len(articles)} crypto news update(s) to the channel.",
+            buttons=control_keyboard(),
         )
 
 
