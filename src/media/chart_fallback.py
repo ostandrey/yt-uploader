@@ -11,6 +11,7 @@ from pathlib import Path
 import imageio_ffmpeg
 from PIL import Image, ImageDraw, ImageFont
 
+from src.media.fonts import ascii_safe, load_font
 from src.media.video_encode import INTERMEDIATE_ENCODE_ARGS
 
 SHORT_WIDTH = 1080
@@ -20,13 +21,7 @@ BRAND = (0, 220, 150)
 
 
 def _font(size: int, bold: bool = True):
-    names = ("arialbd.ttf", "Arial Bold.ttf") if bold else ("arial.ttf",)
-    for name in names:
-        try:
-            return ImageFont.truetype(name, size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
+    return load_font(size, bold=bold)
 
 
 def create_chart_card_png(label: str, output_path: Path) -> Path:
@@ -68,7 +63,7 @@ def create_chart_card_png(label: str, output_path: Path) -> Path:
     draw.text((70 * scale, 100 * scale), "COIN WIRE", fill=BRAND, font=_font(42 * scale))
     draw.text(
         (70 * scale, 1550 * scale),
-        label.upper()[:40],
+        ascii_safe(label).upper()[:40],
         fill=(230, 235, 245),
         font=_font(28 * scale, bold=False),
     )

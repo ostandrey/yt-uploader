@@ -111,7 +111,7 @@ def _short_title(article_title: str, moves: List[Tuple[str, float, str]]) -> str
         remainder = article_title.split("—")[0].split("-")[0].strip()
         if len(remainder) > 20 and len(headline) < 60:
             short_remainder = remainder[:40].strip()
-            return f"{headline} — {short_remainder}"[:100]
+            return f"{headline} - {short_remainder}"[:100]
         return headline[:100]
 
     title = article_title.strip()

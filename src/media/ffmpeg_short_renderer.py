@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional
 import imageio_ffmpeg
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from src.media.bg_music import mix_background_music
 from src.media.chart_fallback import create_chart_card_video
 from src.media.edge_tts_audio import TTSResult, generate_voiceover
@@ -19,6 +19,7 @@ from src.media.script_parser import extract_outro_summary, extract_stat_overlays
 from src.media.sfx_mixer import mix_sfx, plan_sfx_events
 from src.media.stock_image_fetcher import StockImageFetcher
 from src.media.stock_video_fetcher import StockVideoFetcher
+from src.media.fonts import ascii_safe, load_font
 from src.media.text_overlay import apply_final_layers, create_outro_png
 from src.content.market_ticker import fetch_market_quotes
 from src.media.thumbnail_generator import create_short_thumbnail, create_vertical_cover
@@ -128,14 +129,10 @@ def _create_gradient_card(
             int(top[i] + (bottom[i] - top[i]) * ratio) for i in range(3)
         )
         draw.line([(0, y), (SHORT_WIDTH, y)], fill=color)
-    try:
-        font_large = ImageFont.truetype("arialbd.ttf", 56)
-        font_small = ImageFont.truetype("arial.ttf", 32)
-    except OSError:
-        font_large = ImageFont.load_default()
-        font_small = ImageFont.load_default()
+    font_large = load_font(56, bold=True)
+    font_small = load_font(32, bold=False)
     draw.text((70, 120), "COIN WIRE", fill=(0, 220, 150), font=font_small)
-    words = label.split()
+    words = ascii_safe(label).split()
     lines: List[str] = []
     current: List[str] = []
     for word in words:

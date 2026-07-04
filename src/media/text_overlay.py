@@ -12,6 +12,7 @@ from typing import List, Optional
 import imageio_ffmpeg
 from PIL import Image, ImageDraw, ImageFont
 
+from src.media.fonts import ascii_safe, load_font
 from src.media.script_parser import StatOverlay
 
 SHORT_WIDTH = 1080
@@ -34,17 +35,7 @@ def _stat_overlay_y(start: float, fade: float) -> str:
 
 
 def _load_font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    names = (
-        ("arialbd.ttf", "Arial Bold.ttf", "arialblk.ttf")
-        if bold
-        else ("arial.ttf",)
-    )
-    for name in names:
-        try:
-            return ImageFont.truetype(name, size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
+    return load_font(size, bold=bold)
 
 
 def create_stat_overlay_png(
@@ -126,7 +117,7 @@ def create_outro_png(output_path: Path, summary: str = "") -> Path:
     )
 
     if summary:
-        words = summary.split()
+        words = ascii_safe(summary).split()
         lines: list[str] = []
         current: list[str] = []
         for word in words:
@@ -382,9 +373,10 @@ def apply_final_layers(
                     start = ws
                     break
 
-        png_path = work_dir / f"stat_{overlay.text.replace(' ', '_').replace('%', 'pct')}.png"
+        safe_text = ascii_safe(overlay.text)
+        png_path = work_dir / f"stat_{safe_text.replace(' ', '_').replace('%', 'pct')}.png"
         create_stat_overlay_png(
-            overlay.text, png_path, hook_style=overlay.show_from_start
+            safe_text, png_path, hook_style=overlay.show_from_start
         )
         extra_inputs.append(png_path)
 

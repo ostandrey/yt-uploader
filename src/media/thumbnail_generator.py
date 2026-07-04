@@ -11,6 +11,8 @@ from typing import Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
+from src.media.fonts import ascii_safe, load_font
+
 BRAND = (0, 220, 150)
 BRAND_DARK = (0, 160, 110)
 RED = (255, 55, 55)
@@ -101,13 +103,7 @@ def _fit_headline_font(
 
 
 def _font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    names = ("arialbd.ttf", "Arial Bold.ttf", "arialblk.ttf") if bold else ("arial.ttf",)
-    for name in names:
-        try:
-            return ImageFont.truetype(name, size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
+    return load_font(size, bold=bold)
 
 
 def _money_badge(text: str) -> Optional[str]:
