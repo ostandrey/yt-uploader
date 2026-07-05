@@ -8,6 +8,8 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Tuple
 
+from src.content.naturalize import naturalize_text
+
 WORD_NUMBERS = {
     0: "zero", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
     6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten",
@@ -108,7 +110,7 @@ def _short_title(article_title: str, moves: List[Tuple[str, float, str]]) -> str
         label = "Bitcoin" if asset == "bitcoin" else asset.capitalize()
         arrow = "Drops" if direction == "down" else "Rises"
         headline = f"{label} {arrow} {int(round(pct))}%"
-        remainder = article_title.split("—")[0].split("-")[0].strip()
+        remainder = article_title.split("-")[0].strip()
         if len(remainder) > 20 and len(headline) < 60:
             short_remainder = remainder[:40].strip()
             return f"{headline} - {short_remainder}"[:100]
@@ -117,7 +119,7 @@ def _short_title(article_title: str, moves: List[Tuple[str, float, str]]) -> str
     title = article_title.strip()
     if len(title) <= 90:
         return title
-    for splitter in (" as ", " — ", " - ", ", "):
+    for splitter in (" as ", " - ", ", "):
         if splitter in title:
             return title.split(splitter, 1)[0].strip()[:100]
     return _truncate_at_words(title, 87, end="")
@@ -231,7 +233,7 @@ def _spoken_hook(title: str, summary: str, context: str) -> str:
 
     # Fall back to the first clean clause of the title, never mid-word.
     clause = title.strip().rstrip(".")
-    for splitter in (" as ", " — ", " - ", ", "):
+    for splitter in (" as ", " - ", ", "):
         if splitter in clause:
             clause = clause.split(splitter, 1)[0].strip()
             break
@@ -398,11 +400,11 @@ class ShortScriptGenerator:
         description = self._description(short_title, summary, link, source)
 
         return {
-            "title": short_title,
-            "script": script,
+            "title": naturalize_text(short_title),
+            "script": naturalize_text(script),
             "keywords": keywords,
-            "description": description,
-            "source_article": title,
+            "description": naturalize_text(description),
+            "source_article": naturalize_text(title),
             "source_link": link,
         }
 

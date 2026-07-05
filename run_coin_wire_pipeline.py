@@ -30,15 +30,16 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+from src.content.copy_writer import generate_content
 from src.content.crypto_feeds import CryptoNewsFetcher
-from src.content.short_script_generator import ShortScriptGenerator
 from src.media.ffmpeg_short_renderer import FFmpegShortRenderer
 from src.publishers.pending_publish import (
     add_pending_upload,
     auto_publish_delay_minutes,
     auto_publish_enabled,
 )
-from src.publishers.telegram_publisher import TelegramPublisher
+from src.publishers.crosspost import format_crosspost_summary, run_crosspost
+from src.publishers.telegram_publisher import TelegramPublisher, control_keyboard
 from src.publishers.youtube_publisher import YouTubePublisher
 
 VIDEOS_DIR = ROOT / "data" / "storage" / "coin_wire" / "videos"
@@ -136,14 +137,14 @@ def run_pipeline(
             f"(min score {fetcher.short_min_score}, max age {fetcher.short_max_age_hours}h)."
         )
 
-    generator = ShortScriptGenerator()
-    content = generator.from_article(article)
+    content = generate_content(article)
 
     print("=" * 60)
     print("Coin Wire — Daily Pipeline")
     print("=" * 60)
     print(f"Article: {article['title'][:70]}")
     print(f"Short:   {content['title']}")
+    print(f"Copy:    {content.get('copy_source', 'rules')}")
     print()
 
     if dry_run:
@@ -205,8 +206,6 @@ def run_pipeline(
     if skip_upload:
         _save_used_short_hash(article["hash"])
         try:
-            from src.publishers.telegram_publisher import control_keyboard
-
             TelegramPublisher().notify_owner(
                 "Coin Wire Short rendered (upload skipped):\n"
                 f"{video_path}\n\n"
@@ -217,92 +216,103 @@ def run_pipeline(
             print(f"Telegram notify failed: {exc}")
         return result
 
+    youtube_url = ""
+    video_id = ""
+    studio = ""
+    pending_entry: dict = {}
+    auto_on = False
+    delay = 30
+
     if not _youtube_ready():
-        _save_used_short_hash(article["hash"])
-        msg = (
-            "Coin Wire Short ready, but YouTube OAuth is not set up.\n"
-            f"Video: {video_path}\n\n"
-            "Run once:\n"
-            "  1. Fill YOUTUBE_CRYPTO_CLIENT_ID/SECRET in .env\n"
-            "  2. python setup_youtube_oauth.py\n"
-            "  3. python run_coin_wire_pipeline.py"
-        )
-        print(msg)
-        try:
-            from src.publishers.telegram_publisher import control_keyboard
-
-            TelegramPublisher().notify_owner(msg, buttons=control_keyboard())
-        except Exception as exc:
-            print(f"Telegram notify failed: {exc}")
+        print("YouTube OAuth not ready — skipping YouTube upload.")
         result["status"] = "rendered_no_youtube"
-        return result
+    else:
+        publisher = YouTubePublisher()
+        channel = publisher.get_channel_info()
+        print(f"Channel: {channel['title']}")
 
-    publisher = YouTubePublisher()
-    channel = publisher.get_channel_info()
-    print(f"Channel: {channel['title']}")
+        video_id = publisher.upload_short(
+            video_path=video_path,
+            title=content["title"],
+            description=content["description"],
+            tags=DEFAULT_TAGS,
+            privacy_status="unlisted",
+        )
 
-    video_id = publisher.upload_short(
-        video_path=video_path,
-        title=content["title"],
-        description=content["description"],
-        tags=DEFAULT_TAGS,
-        privacy_status="unlisted",
+        if thumb_path.exists():
+            if publisher.set_thumbnail(video_id, thumb_path):
+                print(f"Thumbnail uploaded: {thumb_path}")
+            else:
+                print(
+                    "Thumbnail saved locally - upload manually after "
+                    "YouTube phone verification (Advanced features)."
+                )
+
+        youtube_url = YouTubePublisher.short_url(video_id)
+        studio = YouTubePublisher.studio_url(video_id)
+        pending_entry = _save_pending(video_id, content["title"], config=config)
+        auto_on = auto_publish_enabled(config)
+        delay = auto_publish_delay_minutes(config)
+        result.update({
+            "status": "uploaded",
+            "video_id": video_id,
+            "url": youtube_url,
+            "auto_publish": auto_on,
+        })
+        print(f"\nUploaded (unlisted): {youtube_url}")
+        if auto_on:
+            print(f"Auto-publish in ~{delay} min (disable: YOUTUBE_AUTO_PUBLISH=0)")
+
+    # TikTok / Instagram / Threads (independent of YouTube)
+    print("\n[crosspost] Starting TikTok / Instagram / Threads...")
+    crosspost = run_crosspost(
+        video_path,
+        content["title"],
+        content["description"],
+        config=config,
+        youtube_url=youtube_url,
+        thumbnail_path=thumb_path if thumb_path.exists() else None,
+        keywords=content.get("keywords"),
+        seed=article["hash"],
+        threads_text_override=content.get("threads_text", ""),
+        ig_caption_override=content.get("ig_caption", ""),
     )
+    result["crosspost"] = crosspost
+    print(format_crosspost_summary(crosspost))
 
-    if thumb_path.exists():
-        if publisher.set_thumbnail(video_id, thumb_path):
-            print(f"Thumbnail uploaded: {thumb_path}")
-        else:
-            print(
-                "Thumbnail saved locally — upload manually after "
-                "YouTube phone verification (Advanced features)."
-            )
-
-    url = YouTubePublisher.short_url(video_id)
-    studio = YouTubePublisher.studio_url(video_id)
-    pending_entry = _save_pending(video_id, content["title"], config=config)
     _save_used_short_hash(article["hash"])
 
-    auto_on = auto_publish_enabled(config)
-    delay = auto_publish_delay_minutes(config)
-
     try:
-        from src.publishers.telegram_publisher import control_keyboard
-
         tg = TelegramPublisher()
-        if pending_entry.get("status") == "scheduled":
-            publish_at = pending_entry.get("publish_at", "")[:16].replace("T", " ")
-            tg.notify_owner(
-                "Coin Wire Short uploaded (UNLISTED, auto-publish scheduled):\n"
-                f"{url}\n\n"
-                f"Title: {content['title']}\n"
-                f"Goes PUBLIC ~{delay} min after upload (~{publish_at} UTC)\n"
-                f"Studio: {studio}",
-                buttons=control_keyboard(video_id),
-            )
+        lines = [f"Title: {content['title']}"]
+        if youtube_url:
+            if pending_entry.get("status") == "scheduled":
+                publish_at = pending_entry.get("publish_at", "")[:16].replace("T", " ")
+                lines.insert(
+                    0,
+                    "Coin Wire Short uploaded (UNLISTED, auto-publish scheduled):",
+                )
+                lines.append(youtube_url)
+                lines.append(
+                    f"Goes PUBLIC ~{delay} min after upload (~{publish_at} UTC)"
+                )
+                lines.append(f"Studio: {studio}")
+            else:
+                lines.insert(0, "Coin Wire Short ready for review (UNLISTED):")
+                lines.append(youtube_url)
+                lines.append(f"Studio: {studio}")
         else:
-            tg.notify_owner(
-                "Coin Wire Short ready for review (UNLISTED):\n"
-                f"{url}\n\n"
-                f"Title: {content['title']}\n"
-                f"Studio: {studio}\n"
-                + (f"Thumbnail: {thumb_path}\n" if thumb_path.exists() else ""),
-                buttons=control_keyboard(video_id),
-            )
+            lines.insert(0, "Coin Wire Short rendered (YouTube not configured):")
+            lines.append(str(video_path))
+        lines.append("")
+        lines.append(format_crosspost_summary(crosspost))
+        tg.notify_owner(
+            "\n".join(lines),
+            buttons=control_keyboard(video_id or None),
+        )
     except Exception as exc:
         print(f"Telegram notify failed: {exc}")
 
-    result.update({
-        "status": "uploaded",
-        "video_id": video_id,
-        "url": url,
-        "auto_publish": auto_on,
-    })
-    print(f"\nUploaded (unlisted): {url}")
-    if auto_on:
-        print(f"Auto-publish in ~{delay} min (disable: YOUTUBE_AUTO_PUBLISH=0)")
-    else:
-        print(f"Approve: python upload_coin_wire_short.py --publish {video_id}")
     return result
 
 

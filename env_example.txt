@@ -20,5 +20,38 @@ YOUTUBE_CRYPTO_CLIENT_SECRET=
 PEXELS_API_KEY=
 PIXABAY_API_KEY=
 
+# TikTok Content Posting API (direct file upload)
+# https://developers.tiktok.com/ — enable video.publish scope
+TIKTOK_CLIENT_KEY=
+TIKTOK_CLIENT_SECRET=
+TIKTOK_ACCESS_TOKEN=
+TIKTOK_REFRESH_TOKEN=
+
+# Instagram Reels (Meta Graph API)
+# Instagram Business/Creator linked to Facebook Page
+META_ACCESS_TOKEN=
+INSTAGRAM_USER_ID=
+# INSTAGRAM_ACCESS_TOKEN=   # optional override of META_ACCESS_TOKEN
+
+# Threads
+THREADS_ACCESS_TOKEN=
+THREADS_USER_ID=
+
+# Public media host for Instagram + Threads (S3 or Cloudflare R2)
+# TikTok does NOT need this (uploads the file directly)
+CROSSPOST_S3_BUCKET=
+CROSSPOST_S3_ACCESS_KEY=
+CROSSPOST_S3_SECRET_KEY=
+CROSSPOST_S3_PUBLIC_BASE_URL=   # e.g. https://media.yourdomain.com
+# CROSSPOST_S3_ENDPOINT=        # R2: https://<accountid>.r2.cloudflarestorage.com
+# CROSSPOST_S3_REGION=auto
+# CROSSPOST_S3_ACL=public-read  # only if your bucket uses ACLs
+
+# Optional LLM copy (OpenAI-compatible). Leave empty to use rule-based text only.
+# COPY_LLM_API_KEY=
+# COPY_LLM_MODEL=gpt-4o-mini
+# COPY_LLM_BASE_URL=https://api.openai.com/v1
+# COPY_LLM_ENABLED=1
+
 # Schedule: config/coin_wire.yaml (timezone America/New_York)
 # Railway: mount volumes at /app/data and /app/tokens

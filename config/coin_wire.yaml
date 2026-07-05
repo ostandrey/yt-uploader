@@ -41,6 +41,9 @@ content:
     exclude_keywords: ["buy now", "sell now", "100x", "pump", "signal", "memecoin"]
     preferred_keywords: ["bitcoin", "ethereum", "fed", "sec", "etf", "regulation", "billion"]
 
+  copy_llm:
+    enabled: true              # uses COPY_LLM_API_KEY when set; rules fallback otherwise
+
 publishing:
   telegram:
     enabled: true
@@ -63,11 +66,19 @@ publishing:
     publish_poll_minutes: 5        # worker checks queue every N min
     bot_poll_seconds: 20            # listen for /autopublish commands
   tiktok:
-    enabled: false
-    mode: "manual_crosspost"
+    enabled: true
+    privacy_level: "PUBLIC_TO_EVERYONE"   # unaudited apps may require SELF_ONLY
   instagram:
-    enabled: false
-    mode: "manual_crosspost"
+    enabled: true                         # needs META_ACCESS_TOKEN + INSTAGRAM_USER_ID + R2
+    reel: true                            # publish Short as Reel
+    feed_image: true                      # stock photo + headline overlay (Pexels/Pixabay)
+    carousel: true                        # sometimes 2-slide carousel (headline + extra photo)
+    carousel_rate: 0.35
+  threads:
+    enabled: true                         # needs THREADS_* credentials
+    mode: text                            # text-only news posts (no video)
+    engagement_questions: true            # sometimes add a comment-bait question
+    question_rate: 0.35
 
 automation:
   timezone: "America/New_York"   # US Eastern — primary English crypto audience

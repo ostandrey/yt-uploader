@@ -90,7 +90,45 @@ def _status_text() -> str:
             lines.append(f"    at {entry['publish_at'][:16].replace('T', ' ')} UTC")
     if len(scheduled) > 5:
         lines.append(f"  ... +{len(scheduled) - 5} more")
+    lines.extend(_crosspost_status_lines())
     return "\n".join(lines)
+
+
+def _crosspost_status_lines() -> list[str]:
+    from pathlib import Path
+
+    import yaml
+
+    from src.publishers.instagram_publisher import InstagramPublisher
+    from src.publishers.media_host import media_host_configured
+    from src.publishers.threads_publisher import ThreadsPublisher
+    from src.publishers.tiktok_publisher import TikTokPublisher
+
+    root = Path(__file__).resolve().parents[2]
+    config_path = root / "config" / "coin_wire.yaml"
+    config: dict = {}
+    if config_path.exists():
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+
+    pub = config.get("publishing", {})
+    lines = ["", "Cross-post:"]
+    for name, ready in (
+        ("tiktok", TikTokPublisher().configured()),
+        ("instagram", InstagramPublisher().configured() and media_host_configured()),
+        ("threads", ThreadsPublisher().configured()),
+    ):
+        enabled = bool(pub.get(name, {}).get("enabled", False))
+        if not enabled:
+            lines.append(f"  {name}: disabled")
+        elif ready:
+            lines.append(f"  {name}: ready")
+        else:
+            lines.append(f"  {name}: enabled, credentials missing")
+    if not media_host_configured():
+        lines.append("  media host: missing (IG/Threads video need CROSSPOST_S3_*)")
+    else:
+        lines.append("  media host: ready")
+    return lines
 
 
 def _set_auto_publish(chat_id: str, enabled: bool) -> None:

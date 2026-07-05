@@ -10,6 +10,8 @@ import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Literal, Optional, Tuple
 
+from src.content.naturalize import naturalize_text
+
 TelegramTier = Literal["breaking", "insight", "strong", "standard", "skip"]
 
 # High-impact signals (weight)
@@ -304,12 +306,13 @@ def extract_key_bullets(article: Dict, max_bullets: int = 3) -> List[str]:
         clean = sentence.rstrip(".")
         if len(clean) > 160:
             clean = clean[:157].rsplit(" ", 1)[0] + "..."
-        bullets.append(clean)
+        bullets.append(naturalize_text(clean))
         if len(bullets) >= max_bullets:
             break
 
     if not bullets and summary:
-        bullets.append(summary[:200].rsplit(" ", 1)[0] + ("..." if len(summary) > 200 else ""))
+        fallback = summary[:200].rsplit(" ", 1)[0] + ("..." if len(summary) > 200 else "")
+        bullets.append(naturalize_text(fallback))
 
     return bullets
 
@@ -361,35 +364,35 @@ def classify_telegram_tier(
 TAKEAWAY_RULES: List[Tuple[tuple[str, ...], str]] = [
     (
         ("etf", "outflow", "inflow"),
-        "ETF flow headlines often move Bitcoin before spot fully prices in — watch daily issuer data and net flows.",
+        "ETF flow headlines often move Bitcoin before spot fully prices in. Watch daily issuer data and net flows.",
     ),
     (
         ("sec", "regulation", "regulatory"),
-        "Regulatory headlines reshape institutional risk appetite — compliance news can hit exchanges and majors fast.",
+        "Regulatory headlines reshape institutional risk appetite. Compliance news can hit exchanges and majors fast.",
     ),
     (
         ("lawsuit", "settlement"),
-        "Legal headlines can move exchange and protocol tokens if the case names a listed crypto company — confirm who is affected.",
+        "Legal headlines can move exchange and protocol tokens if the case names a listed crypto company. Confirm who is affected.",
     ),
     (
         ("fed", "federal reserve", "interest rate", "rate cut", "rate hike", "inflation"),
-        "Fed and macro data drive risk-on/risk-off across crypto — rates staying restrictive usually pressures speculative assets.",
+        "Fed and macro data drive risk-on/risk-off across crypto. Restrictive rates usually pressure speculative assets.",
     ),
     (
         ("hack", "exploit", "breach"),
-        "Security incidents can trigger short-term sell pressure and chain outflows — verify scope before sizing any reaction.",
+        "Security incidents can trigger short-term sell pressure and chain outflows. Verify scope before sizing any reaction.",
     ),
     (
         ("blackrock", "fidelity", "institutional", "wall street", "treasury"),
-        "Institutional adoption stories support the long-term narrative but near-term price still follows liquidity and macro.",
+        "Institutional adoption stories support the long-term narrative, but near-term price still follows liquidity and macro.",
     ),
     (
         ("tokenization", "rwa"),
-        "Tokenization news signals where TradFi capital may enter on-chain next — follow issuer partnerships and live products.",
+        "Tokenization news signals where TradFi capital may enter on-chain next. Follow issuer partnerships and live products.",
     ),
     (
         ("billion", "million"),
-        "Large dollar figures usually mean treasury, ETF, or M&A moves — size matters more than the headline adjective.",
+        "Large dollar figures usually mean treasury, ETF, or M&A moves. Size matters more than the headline adjective.",
     ),
 ]
 
@@ -399,14 +402,14 @@ def build_market_takeaway(article: Dict) -> str:
     text = _article_text(article)
     for keywords, takeaway in TAKEAWAY_RULES:
         if any(_contains_term(text, keyword) for keyword in keywords):
-            return takeaway
+            return naturalize_text(takeaway)
     if "bitcoin" in text or "ethereum" in text:
-        return (
-            "Major coin headlines tend to drag the broader market — "
-            "watch BTC dominance and ETH beta for the knock-on move."
+        return naturalize_text(
+            "Major coin headlines tend to drag the broader market. "
+            "Watch BTC dominance and ETH beta for the knock-on move."
         )
-    return (
-        "This is a developing story — follow the primary source for "
+    return naturalize_text(
+        "This is a developing story. Follow the primary source for "
         "confirmed numbers before trading on headlines alone."
     )
 
@@ -427,7 +430,7 @@ def format_telegram_post_html(
     bullets = extract_key_bullets(article, max_bullets=max_bullets)
     hashtags = build_hashtags(article, max_tags=4)
     source_label = _esc(article.get("source", "news").replace("_", " ").title())
-    title = _esc(article["title"])
+    title = _esc(naturalize_text(article["title"]))
 
     lines: List[str] = []
 
@@ -472,7 +475,7 @@ def format_telegram_post(article: Dict) -> str:
     hashtags = build_hashtags(article)
     source_label = article.get("source", "news").replace("_", " ").title()
 
-    lines = [f"📰 {article['title']}", ""]
+    lines = [f"📰 {naturalize_text(article['title'])}", ""]
     for bullet in bullets:
         lines.append(f"• {bullet}")
     lines.extend([
