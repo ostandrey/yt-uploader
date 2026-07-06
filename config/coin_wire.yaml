@@ -76,9 +76,15 @@ publishing:
     carousel_rate: 0.35
   threads:
     enabled: true                         # needs THREADS_* credentials
-    mode: text                            # text-only news posts (no video)
-    engagement_questions: true            # sometimes add a comment-bait question
-    question_rate: 0.35
+    mode: text                            # text-only (no native video for now)
+    engagement_questions: true
+    question_rate: 0.25
+    news_pulse:
+      enabled: true
+      min_tier: strong
+      max_per_day: 3
+      cooldown_minutes: 120
+      question_rate: 0.25
 
 automation:
   timezone: "America/New_York"   # US Eastern — primary English crypto audience

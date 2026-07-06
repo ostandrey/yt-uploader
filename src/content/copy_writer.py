@@ -25,10 +25,10 @@ from dotenv import load_dotenv
 
 from src.content.naturalize import naturalize_text
 from src.content.short_script_generator import ShortScriptGenerator
+from src.content.humanize_copy import pick_engagement_question
 from src.publishers.captions import (
     build_caption,
     build_threads_text,
-    pick_engagement_question,
     should_add_engagement_question,
 )
 
@@ -47,11 +47,14 @@ BANNED_PHRASES = (
 
 SYSTEM_PROMPT = """You write English crypto news copy for Coin Wire (Telegram, YouTube Shorts, Threads, Instagram).
 
+Sound like a sharp human editor at a news desk, NOT like AI or a marketing bot.
+
 Rules:
 - Use ONLY facts from the provided article. Do not invent numbers, quotes, or events.
-- Tone: clear, professional, newsroom. No hype, no shilling.
+- Short sentences. Plain words. No filler ("In today's...", "It's worth noting", "landscape", "navigate").
 - Never use em dashes. Use commas, periods, or hyphens instead.
-- No "buy now", "100x", or investment advice.
+- No hype, no "buy now", no disclaimers in Threads text.
+- Questions should be casual and specific to the story, not generic surveys.
 - Output valid JSON only, matching the schema exactly."""
 
 
@@ -102,12 +105,13 @@ def _rules_copy(article: Dict[str, Any], *, seed: str = "") -> PlatformCopy:
     base = ShortScriptGenerator().from_article(article)
     seed = seed or article.get("hash") or base["title"]
     question = ""
-    if should_add_engagement_question(seed, 0.35):
+    if should_add_engagement_question(seed, 0.25):
         question = pick_engagement_question(seed)
     threads = build_threads_text(
         base["title"],
         base.get("description", ""),
         engagement_question=question,
+        seed=seed,
     )
     ig = build_caption(base["title"], base.get("description", ""), max_len=500)
     return PlatformCopy(

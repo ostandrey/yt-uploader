@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 from src.content.crypto_feeds import CryptoNewsFetcher
 from src.content.telegram_posting import TelegramPostingConfig, run_smart_post
 from src.publishers.telegram_publisher import TelegramPublisher
+from src.publishers.threads_pulse import ThreadsPulseConfig, maybe_post_news_pulse
 
 
 def _load_config() -> dict:
@@ -64,6 +65,18 @@ def main() -> None:
             print(f"[DRY RUN] Would post ({result['reason']}) tier={result['tier']} score={result['score']}")
             print(f"Title: {result['title']}\n")
             print(result["text"])
+            pulse_cfg = ThreadsPulseConfig.from_config(config)
+            pulse = maybe_post_news_pulse(
+                result["article"],
+                result["tier"],
+                pulse_cfg,
+                dry_run=True,
+            )
+            if pulse.get("dry_run"):
+                print(f"\n[DRY RUN] Threads pulse ({pulse.get('variant')}):")
+                print(pulse.get("text", ""))
+            elif pulse.get("reason"):
+                print(f"\nThreads pulse skip: {pulse['reason']}")
             return
 
         if result.get("posted"):
@@ -72,6 +85,18 @@ def main() -> None:
                 f"score={result['score']} — {result['title'][:60]}"
             )
             print(f"Today: {result['post_count']} post(s)")
+
+            pulse_cfg = ThreadsPulseConfig.from_config(config)
+            pulse = maybe_post_news_pulse(
+                result["article"],
+                result["tier"],
+                pulse_cfg,
+            )
+            if pulse.get("posted"):
+                print(f"Threads pulse ({pulse.get('variant')}): {pulse.get('url')}")
+            elif pulse.get("reason"):
+                print(f"Threads pulse skip: {pulse['reason']}")
+
             if not args.dry_run:
                 from src.publishers.telegram_publisher import control_keyboard
 

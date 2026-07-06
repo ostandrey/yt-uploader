@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import List, Optional
 
+from src.content.humanize_copy import (
+    pick_threads_tags,
+    should_use_hashtags,
+)
 from src.content.naturalize import naturalize_text
 
 DEFAULT_HASHTAGS = [
@@ -17,30 +21,18 @@ DEFAULT_HASHTAGS = [
 
 DISCLAIMER = "Not financial advice. News and education only."
 
-ENGAGEMENT_QUESTIONS = [
-    "What's your take: bullish or bearish?",
-    "Buying the dip or waiting on the sidelines?",
-    "Does this change your outlook for the week?",
-    "Would you add, hold, or reduce exposure here?",
-    "What would you watch next: BTC or alts?",
-]
-
 
 def _seed_value(seed: str) -> int:
     text = (seed or "coinwire").strip()
     return sum(ord(c) for c in text)
 
 
-def should_add_engagement_question(seed: str, rate: float = 0.35) -> bool:
+def should_add_engagement_question(seed: str, rate: float = 0.25) -> bool:
     if rate <= 0:
         return False
     if rate >= 1:
         return True
     return (_seed_value(seed) % 100) < int(rate * 100)
-
-
-def pick_engagement_question(seed: str) -> str:
-    return ENGAGEMENT_QUESTIONS[_seed_value(seed) % len(ENGAGEMENT_QUESTIONS)]
 
 
 def build_caption(
@@ -56,7 +48,6 @@ def build_caption(
     parts = [naturalize_text(title.strip())]
     desc = naturalize_text((description or "").strip())
     if desc and desc.lower() != title.strip().lower():
-        # Keep caption short — first paragraph only
         first = desc.split("\n")[0].strip()
         if first and first not in parts[0]:
             parts.append(first[:280])
@@ -66,7 +57,7 @@ def build_caption(
     caption = "\n\n".join(p for p in parts if p)
     if len(caption) <= max_len:
         return caption
-    return caption[: max_len - 1].rstrip() + "…"
+    return caption[: max_len - 1].rstrip() + "..."
 
 
 def build_threads_text(
@@ -75,17 +66,20 @@ def build_threads_text(
     youtube_url: str = "",
     *,
     engagement_question: str = "",
+    seed: str = "",
 ) -> str:
-    """Threads hard limit is 500 characters."""
+    """Threads hard limit is 500 characters. Reads like a person posted it."""
+    seed = seed or title
     lines = [naturalize_text(title.strip())]
     title_norm = lines[0].lower()
-    desc = naturalize_text((description or "").strip()).split("\n")[0][:160]
-    if desc and desc.lower() != title_norm:
+    desc = naturalize_text((description or "").strip()).split("\n")[0][:140]
+    if desc and desc.lower() != title_norm and desc.lower() not in title_norm:
         lines.append(desc)
     if engagement_question:
         lines.append(naturalize_text(engagement_question.strip()))
     if youtube_url:
         lines.append(youtube_url)
-    lines.append("#bitcoin #crypto #coinwire")
+    if should_use_hashtags(seed):
+        lines.append(pick_threads_tags(seed))
     text = "\n\n".join(line for line in lines if line)
     return text[:500]

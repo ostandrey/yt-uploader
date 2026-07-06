@@ -112,9 +112,11 @@ def _crosspost_status_lines() -> list[str]:
 
     pub = config.get("publishing", {})
     lines = ["", "Cross-post:"]
+    ig_pub = InstagramPublisher()
+    ig_meta = ig_pub.configured()
+    ig_host = media_host_configured()
     for name, ready in (
         ("tiktok", TikTokPublisher().configured()),
-        ("instagram", InstagramPublisher().configured() and media_host_configured()),
         ("threads", ThreadsPublisher().configured()),
     ):
         enabled = bool(pub.get(name, {}).get("enabled", False))
@@ -124,8 +126,21 @@ def _crosspost_status_lines() -> list[str]:
             lines.append(f"  {name}: ready")
         else:
             lines.append(f"  {name}: enabled, credentials missing")
+
+    ig_enabled = bool(pub.get("instagram", {}).get("enabled", False))
+    if not ig_enabled:
+        lines.append("  instagram: disabled")
+    elif ig_meta and ig_host:
+        lines.append("  instagram: ready")
+    elif ig_meta and not ig_host:
+        lines.append("  instagram: meta ok, needs R2 (CROSSPOST_S3_*)")
+    elif not ig_meta and ig_host:
+        lines.append("  instagram: R2 ok, needs META_ACCESS_TOKEN + INSTAGRAM_USER_ID")
+    else:
+        lines.append("  instagram: needs META_* + CROSSPOST_S3_*")
+
     if not media_host_configured():
-        lines.append("  media host: missing (IG/Threads video need CROSSPOST_S3_*)")
+        lines.append("  media host: missing (Instagram Reels/feed)")
     else:
         lines.append("  media host: ready")
     return lines

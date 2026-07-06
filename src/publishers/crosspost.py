@@ -14,10 +14,10 @@ import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
+from src.content.humanize_copy import pick_engagement_question
 from src.publishers.captions import (
     build_caption,
     build_threads_text,
-    pick_engagement_question,
     should_add_engagement_question,
 )
 from src.media.instagram_feed_image import create_instagram_feed_assets
@@ -111,7 +111,7 @@ def run_crosspost(
     else:
         engagement = ""
         if threads_cfg.get("engagement_questions", True):
-            rate = float(threads_cfg.get("question_rate", 0.35))
+            rate = float(threads_cfg.get("question_rate", 0.25))
             if should_add_engagement_question(seed, rate):
                 engagement = pick_engagement_question(seed)
         threads_text = build_threads_text(
@@ -119,6 +119,7 @@ def run_crosspost(
             description,
             youtube_url=youtube_url,
             engagement_question=engagement,
+            seed=seed,
         )
 
     ig_caption = ig_caption_override.strip() or caption

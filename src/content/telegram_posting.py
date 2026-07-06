@@ -238,6 +238,7 @@ def run_smart_post(
                 "title": article["title"],
                 "text": text,
                 "post_count": state.post_count,
+                "article": article,
             }
 
         publisher.post_to_channel_html(text, buttons=buttons)
@@ -254,6 +255,7 @@ def run_smart_post(
             "score": score,
             "title": article["title"],
             "post_count": state.post_count,
+            "article": article,
         }
 
     return {

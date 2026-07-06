@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.content.humanize_copy import (
+    pick_engagement_question,
+)
 from src.publishers.captions import (
     build_caption,
     build_threads_text,
-    pick_engagement_question,
     should_add_engagement_question,
 )
 from src.publishers.crosspost import format_crosspost_summary, run_crosspost
@@ -32,10 +34,11 @@ def test_threads_text_under_500():
 def test_threads_text_can_include_engagement_question():
     text = build_threads_text(
         "Bitcoin drops 4%",
-        engagement_question="What's your take?",
+        engagement_question="Bullish or bearish on this one?",
+        seed="test-seed-tags",
     )
-    assert "What's your take?" in text
-    assert "#bitcoin" in text
+    assert "Bullish or bearish on this one?" in text
+    assert "#" in text
 
 
 def test_engagement_question_is_deterministic():
