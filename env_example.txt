@@ -16,9 +16,10 @@ YOUTUBE_CRYPTO_CLIENT_SECRET=
 # YOUTUBE_AUTO_PUBLISH=1   # hard lock ON (overrides bot)
 # Or use Telegram bot: /autopublish off | /autopublish on
 
-# Stock media
+# Stock media (B-roll fill + live Short fallback)
 PEXELS_API_KEY=
 PIXABAY_API_KEY=
+# Optional YOLO on fill: pip install ultralytics opencv-python-headless
 
 # TikTok Content Posting API (direct file upload)
 # https://developers.tiktok.com/ — enable video.publish scope

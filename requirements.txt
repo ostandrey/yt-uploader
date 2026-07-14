@@ -10,6 +10,9 @@ pillow==10.0.0
 edge-tts>=7.2.0
 imageio-ffmpeg>=0.5.0
 faster-whisper>=1.0.0
+# Optional B-roll YOLO QA on fill
+ultralytics>=8.0.0
+opencv-python-headless>=4.8.0
 
 # YouTube OAuth + upload
 google-api-python-client==2.100.0

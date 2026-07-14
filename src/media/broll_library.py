@@ -4,17 +4,34 @@ Local B-roll clip library — zero API latency, used before Pexels/Pixabay.
 Drop portrait MP4s into:
   data/assets/broll_library/{category}/*.mp4
 
+Clips with reject:true in *.meta.json (or under _rejected/) are skipped.
+Fill via: python scripts/fill_broll_library.py
+
 Categories: bitcoin, ethereum, macro, regulation, security, defi, default
 """
 
 from __future__ import annotations
 
+import json
 import random
 from pathlib import Path
 from typing import Optional, Set
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LIBRARY = ROOT / "data" / "assets" / "broll_library"
+
+
+def _is_rejected(mp4: Path) -> bool:
+    if "_rejected" in mp4.parts:
+        return True
+    meta = mp4.with_suffix(".meta.json")
+    if not meta.exists():
+        return False
+    try:
+        return bool(json.loads(meta.read_text(encoding="utf-8")).get("reject"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return False
+
 
 VALID_CATEGORIES = frozenset({
     "bitcoin", "ethereum", "macro", "regulation", "security", "defi", "default",
@@ -68,7 +85,7 @@ def list_library_clips(library_root: Path, category: str) -> list[Path]:
         if not folder.is_dir():
             continue
         for path in sorted(folder.glob("*.mp4")):
-            if path.stat().st_size > 50_000:
+            if path.stat().st_size > 50_000 and not _is_rejected(path):
                 clips.append(path)
     return clips
 
