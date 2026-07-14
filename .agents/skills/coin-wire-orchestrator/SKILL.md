@@ -98,3 +98,9 @@ If they prefer BMAD party theater:
 - Do not open Meta Graph rabbit holes unless synthesis prioritizes it
 - Do not start coding fill_broll until synthesis is written (unless user overrides)
 - Do not invent custom YOLO training as V1
+
+## Tell the user when to re-invoke
+
+After normal implementation work, if the next step is a new epic or cross-role conflict,
+explicitly say: invoke `coin-wire-orchestrator` again. If the next step is just the next
+backlog item, say orchestrator is not needed.

@@ -1,9 +1,25 @@
 # Coin Wire — BMAD analysis brief
 
-**Status:** Fill + YOLO done; **scored pick + rotation implemented** (`broll_library.pick_local_clip`).  
-**Goal next:** smoke Short and confirm `source_stats.local` dominates.
+**Status:** Fill + YOLO + scored pick done; **CLIP index + humanized TG takeaways** shipped.  
+**Next:** `python scripts/index_broll_library.py` (full library), then optional `--apply-move`.
 
 Communication / docs language for BMAD config: **uk**.
+
+---
+
+## When to re-run the orchestrator
+
+Agent should **tell the user** when to invoke `coin-wire-orchestrator` again — do not wait for them to remember.
+
+**Re-run when:**
+- Starting a new epic (platforms, motion hook, video engine change)
+- Priority conflict across product / architecture / editorial / video
+- Production retro after ~2–3 weeks of real posts
+- Before a fresh PRD / architecture for something not already in the synthesis
+
+**Do not re-run for:** small fixes, scripts, tests, config, next item on an agreed backlog.
+
+Standing line for the Showrunner chat: *«Тут варто знову запустити оркестратор»* vs *«Це пряма імплементація, оркестратор не потрібен»*.
 
 ---
 

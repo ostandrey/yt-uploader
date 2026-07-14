@@ -107,6 +107,7 @@ wandb/
 # B-roll fill QA scratch + rejected stock (mp4 already ignored; keep folders clean)
 data/assets/broll_library/**/_qa_work/
 data/assets/broll_library/**/_rejected/
+data/assets/broll_library/**/_clip_work/
 
 # BMAD generated artifacts (agents/skills under .agents/ and _bmad/ ARE committed)
 _bmad-output/

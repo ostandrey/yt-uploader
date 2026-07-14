@@ -77,6 +77,16 @@ def score_clip(mp4: Path, *, prefer_hook: bool = False) -> Tuple[int, Dict[str, 
         int(probe.get("height") or 0) >= int(probe.get("width") or 1)
     ):
         score += 10
+    # CLIP folder fit (0.2..0.35 typical) → up to +50
+    folder_score = meta.get("clip_folder_score")
+    if folder_score is None and isinstance(meta.get("clip_scores"), dict):
+        cat = meta.get("category") or mp4.parent.name
+        folder_score = meta["clip_scores"].get(cat)
+    if isinstance(folder_score, (int, float)):
+        score += int(max(0.0, min(float(folder_score), 0.4)) * 125)
+    # Penalize clear mismatch suggestions left in place
+    if meta.get("clip_suggest_move") and not prefer_hook:
+        score -= 25
     if prefer_hook:
         if "good_for_hook" in flags:
             score += 40

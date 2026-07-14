@@ -364,54 +364,56 @@ def classify_telegram_tier(
 TAKEAWAY_RULES: List[Tuple[tuple[str, ...], str]] = [
     (
         ("etf", "outflow", "inflow"),
-        "ETF flow headlines often move Bitcoin before spot fully prices in. Watch daily issuer data and net flows.",
+        "ETF flow prints often lead spot BTC. Watch issuer totals next.",
     ),
     (
         ("sec", "regulation", "regulatory"),
-        "Regulatory headlines reshape institutional risk appetite. Compliance news can hit exchanges and majors fast.",
+        "Regulatory headlines hit exchange and large-cap risk appetite fast.",
     ),
     (
         ("lawsuit", "settlement"),
-        "Legal headlines can move exchange and protocol tokens if the case names a listed crypto company. Confirm who is affected.",
+        "Legal moves matter when a listed crypto company is named. Check who is exposed.",
     ),
     (
         ("fed", "federal reserve", "interest rate", "rate cut", "rate hike", "inflation"),
-        "Fed and macro data drive risk-on/risk-off across crypto. Restrictive rates usually pressure speculative assets.",
+        "Fed and macro prints drive risk-on/off across crypto.",
     ),
     (
         ("hack", "exploit", "breach"),
-        "Security incidents can trigger short-term sell pressure and chain outflows. Verify scope before sizing any reaction.",
+        "Security incidents can spark short-term selling. Confirm size before reacting.",
     ),
     (
         ("blackrock", "fidelity", "institutional", "wall street", "treasury"),
-        "Institutional adoption stories support the long-term narrative, but near-term price still follows liquidity and macro.",
+        "Big buyers support the long story; near-term price still follows liquidity.",
     ),
     (
         ("tokenization", "rwa"),
-        "Tokenization news signals where TradFi capital may enter on-chain next. Follow issuer partnerships and live products.",
+        "Tokenization points to where TradFi may come on-chain next.",
     ),
     (
         ("billion", "million"),
-        "Large dollar figures usually mean treasury, ETF, or M&A moves. Size matters more than the headline adjective.",
+        "Large dollar figures usually mean treasury, ETF, or M&A size. Focus on the number.",
     ),
 ]
 
 
 def build_market_takeaway(article: Dict) -> str:
-    """Rule-based 'so what' line — no LLM."""
+    """Rule-based 'so what' line — humanized, no LLM."""
+    from src.content.humanize_copy import humanize_takeaway
+
     text = _article_text(article)
+    raw = ""
     for keywords, takeaway in TAKEAWAY_RULES:
         if any(_contains_term(text, keyword) for keyword in keywords):
-            return naturalize_text(takeaway)
-    if "bitcoin" in text or "ethereum" in text:
-        return naturalize_text(
-            "Major coin headlines tend to drag the broader market. "
-            "Watch BTC dominance and ETH beta for the knock-on move."
-        )
-    return naturalize_text(
-        "This is a developing story. Follow the primary source for "
-        "confirmed numbers before trading on headlines alone."
-    )
+            raw = takeaway
+            break
+    if not raw:
+        if "bitcoin" in text or "ethereum" in text:
+            raw = "Majors lead; watch BTC dominance and ETH follow-through."
+        else:
+            # Prefer no generic boilerplate — empty skips takeaway noise
+            return ""
+    return humanize_takeaway(naturalize_text(raw)) or naturalize_text(raw)
 
 
 def _esc(text: str) -> str:
@@ -454,9 +456,11 @@ def format_telegram_post_html(
         lines.append(f"• {_esc(bullet)}")
 
     if include_insight or tier in ("breaking", "insight"):
-        lines.append("")
-        lines.append(f"💡 <b>Takeaway</b>")
-        lines.append(_esc(build_market_takeaway(article)))
+        takeaway = build_market_takeaway(article)
+        if takeaway:
+            lines.append("")
+            lines.append("💡 <b>Takeaway</b>")
+            lines.append(_esc(takeaway))
 
     lines.extend([
         "",
