@@ -207,9 +207,10 @@ def run_pipeline(
         _save_used_short_hash(article["hash"])
         try:
             TelegramPublisher().notify_owner(
-                "Coin Wire Short rendered (upload skipped):\n"
-                f"{video_path}\n\n"
-                f"Title: {content['title']}",
+                "Coin Wire Short rendered (upload skipped).\n\n"
+                f"Title: {content['title']}\n"
+                f"File: {video_path.name}\n"
+                "(Full path is only on the machine that ran the pipeline — check the console.)",
                 buttons=control_keyboard(),
             )
         except Exception as exc:
@@ -303,7 +304,8 @@ def run_pipeline(
                 lines.append(f"Studio: {studio}")
         else:
             lines.insert(0, "Coin Wire Short rendered (YouTube not configured):")
-            lines.append(str(video_path))
+            lines.append(f"File: {video_path.name}")
+            lines.append("(Path is on the render host — see console / Railway logs.)")
         lines.append("")
         lines.append(format_crosspost_summary(crosspost))
         tg.notify_owner(

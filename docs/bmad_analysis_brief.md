@@ -1,7 +1,7 @@
 # Coin Wire — BMAD analysis brief
 
-**Status:** Orchestrator done; **fill + YOLO-on-ingest implemented** (`scripts/fill_broll_library.py`).  
-**Goal next:** run fill locally (install ultralytics for YOLO marks), then CLIP index / renderer preference.
+**Status:** Fill + YOLO done; **scored pick + rotation implemented** (`broll_library.pick_local_clip`).  
+**Goal next:** smoke Short and confirm `source_stats.local` dominates.
 
 Communication / docs language for BMAD config: **uk**.
 

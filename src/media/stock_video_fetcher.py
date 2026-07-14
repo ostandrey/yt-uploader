@@ -208,8 +208,15 @@ class StockVideoFetcher:
         orientation: str = "portrait",
         min_height: int = 1080,
         category: str = "default",
+        *,
+        prefer_hook: bool = False,
     ) -> Optional[Dict]:
-        local_path = pick_local_clip(category, self.used_urls, self.library_path)
+        local_path = pick_local_clip(
+            category,
+            self.used_urls,
+            self.library_path,
+            prefer_hook=prefer_hook,
+        )
         if local_path:
             resolved = str(local_path.resolve())
             self.used_urls.add(resolved)

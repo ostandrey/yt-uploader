@@ -370,6 +370,7 @@ def _fetch_broll_clips(
                 keyword,
                 min_height=min_fetch_height,
                 category=category,
+                prefer_hook=(index == 0),
             )
             if video_meta and video_meta.get("source") != "local":
                 if prefer_hd and video_meta.get("height", 0) < min_stock_height:

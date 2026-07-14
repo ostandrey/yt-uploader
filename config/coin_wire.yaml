@@ -97,6 +97,8 @@ broll_library:
   prefer_portrait: true
   run_yolo_on_fill: true           # needs: pip install ultralytics opencv-python-headless
   move_rejects: true               # bad clips → category/_rejected/
+  scored_pick: true                # prefer has_screen / good_for_hook
+  rotate_used_clips: true          # persist used ids under data/storage/coin_wire/
 
 automation:
   timezone: "America/New_York"   # US Eastern — primary English crypto audience
