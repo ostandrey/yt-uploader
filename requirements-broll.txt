@@ -1,0 +1,9 @@
+# Local-only B-roll tooling (fill + YOLO + CLIP index).
+# Do not install on Railway — too heavy for the Shorts worker.
+#
+#   .\.venv\Scripts\Activate.ps1
+#   pip install -r requirements-broll.txt
+
+ultralytics>=8.0.0
+opencv-python-headless>=4.8.0
+open-clip-torch>=2.24.0
