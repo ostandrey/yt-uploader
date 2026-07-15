@@ -335,7 +335,14 @@ def create_vertical_cover(title: str, output_path: Path) -> Path:
     font_brand = _font(44)
     font_sub = _font(36, bold=False)
 
-    draw.text((70, 130), "COIN WIRE", fill=BRAND, font=font_brand)
+    brand = "COIN WIRE"
+    bb = draw.textbbox((0, 0), brand, font=font_brand)
+    draw.text(
+        ((SHORT_WIDTH - (bb[2] - bb[0])) // 2, 130),
+        brand,
+        fill=BRAND,
+        font=font_brand,
+    )
 
     font_head, headline_lines = _fit_headline_font(
         hook.headline, max_width=SHORT_WIDTH - 140, max_lines=3
@@ -343,17 +350,32 @@ def create_vertical_cover(title: str, output_path: Path) -> Path:
     y = 360
     line_height = int(font_head.size * 1.05) if hasattr(font_head, "size") else 90
     for line in headline_lines:
-        draw.text((73, y + 4), line, fill=(0, 0, 0), font=font_head)
-        draw.text((70, y), line, fill=(255, 255, 255), font=font_head)
+        lb = draw.textbbox((0, 0), line, font=font_head)
+        lx = (SHORT_WIDTH - (lb[2] - lb[0])) // 2
+        draw.text((lx + 3, y + 4), line, fill=(0, 0, 0), font=font_head)
+        draw.text((lx, y), line, fill=(255, 255, 255), font=font_head)
         y += line_height
 
-    draw.text((70, y + 16), hook.subline, fill=(170, 185, 200), font=font_sub)
+    sub_bb = draw.textbbox((0, 0), hook.subline, font=font_sub)
+    draw.text(
+        ((SHORT_WIDTH - (sub_bb[2] - sub_bb[0])) // 2, y + 16),
+        hook.subline,
+        fill=(170, 185, 200),
+        font=font_sub,
+    )
 
     if hook.badge:
         _draw_badge(draw, hook.badge, SHORT_WIDTH // 2, 1050, hook.accent, size=160)
 
     _draw_chart(draw, 100, 1250, 880, 520, bullish=hook.direction != "down")
-    draw.text((70, 1820), "Tap to see the full story", fill=BRAND, font=_font(34, bold=False))
+    cta = "Tap to see the full story"
+    cta_bb = draw.textbbox((0, 0), cta, font=_font(34, bold=False))
+    draw.text(
+        ((SHORT_WIDTH - (cta_bb[2] - cta_bb[0])) // 2, 1820),
+        cta,
+        fill=BRAND,
+        font=_font(34, bold=False),
+    )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path, format="PNG", optimize=True)

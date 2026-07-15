@@ -364,10 +364,45 @@ def _word_to_number(word: str) -> Optional[int]:
 
 def extract_stat_overlays(script: str) -> List[StatOverlay]:
     """
-    Pull headline stats for on-screen overlays, e.g. 'BTC -4%'.
+    Pull headline stats for on-screen overlays, e.g. 'BTC -4%' or '$1B'.
+    Money figures preferred as hook (show_from_start).
     """
     overlays: List[StatOverlay] = []
     lower = script.lower()
+
+    # Hook money: "$1 billion", "one billion dollars", "7 million", "$1.2B"
+    money = re.search(
+        r"(?:\$\s*)?"
+        r"(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s*"
+        r"(billion|million)\b",
+        lower,
+    )
+    if not money:
+        money = re.search(r"\$\s*(\d+(?:\.\d+)?)\s*([bm])\b", lower)
+    if money:
+        raw_amount = money.group(1)
+        unit_raw = money.group(2).lower()
+        if raw_amount.replace(".", "", 1).isdigit():
+            amount_num = float(raw_amount)
+            amount_label = (
+                raw_amount if "." in raw_amount else str(int(amount_num))
+            )
+        else:
+            amount_num = float(_word_to_number(raw_amount) or 0)
+            amount_label = str(int(amount_num)) if amount_num else raw_amount
+        if amount_num or amount_label:
+            if unit_raw.startswith("b"):
+                label = f"${amount_label}B"
+                keyword = "billion"
+            else:
+                label = f"${amount_label}M"
+                keyword = "million"
+            overlays.append(StatOverlay(
+                text=label,
+                keyword=keyword,
+                display_sec=2.8,
+                show_from_start=True,
+            ))
 
     percent_match = re.search(
         r"(bitcoin|btc|ethereum|eth|crypto)\s+.{0,40}?"
@@ -382,7 +417,7 @@ def extract_stat_overlays(script: str) -> List[StatOverlay]:
             overlays.append(StatOverlay(
                 text=f"{prefix} -{num}%",
                 keyword=asset,
-                show_from_start=True,
+                show_from_start=not overlays,
             ))
 
     pct_symbol = re.search(
@@ -394,7 +429,7 @@ def extract_stat_overlays(script: str) -> List[StatOverlay]:
         overlays.append(StatOverlay(
             text=f"BTC -{num}%",
             keyword="bitcoin",
-            show_from_start=True,
+            show_from_start=not overlays,
         ))
 
     eth_match = re.search(
@@ -411,7 +446,15 @@ def extract_stat_overlays(script: str) -> List[StatOverlay]:
                 display_sec=2.5,
             ))
 
-    return overlays[:2]
+    # de-dupe by text, keep order (money first)
+    seen: set[str] = set()
+    unique: List[StatOverlay] = []
+    for item in overlays:
+        if item.text in seen:
+            continue
+        seen.add(item.text)
+        unique.append(item)
+    return unique[:2]
 
 
 def extract_outro_summary(script: str) -> str:

@@ -172,7 +172,7 @@ def run_pipeline(
         output_path=video_path,
         keywords=content["keywords"],
         voice=settings.get("voice", "en-US-ChristopherNeural"),
-        rate=settings.get("voice_rate", "-8%"),
+        rate=settings.get("voice_rate", "+8%"),
         pitch="-2Hz",
         work_dir=work_dir,
         price_overlay=settings.get("price_overlay", True),
@@ -228,41 +228,70 @@ def run_pipeline(
         print("YouTube OAuth not ready — skipping YouTube upload.")
         result["status"] = "rendered_no_youtube"
     else:
-        publisher = YouTubePublisher()
-        channel = publisher.get_channel_info()
-        print(f"Channel: {channel['title']}")
+        try:
+            publisher = YouTubePublisher()
+            channel = publisher.get_channel_info()
+            print(f"Channel: {channel['title']}")
 
-        video_id = publisher.upload_short(
-            video_path=video_path,
-            title=content["title"],
-            description=content["description"],
-            tags=DEFAULT_TAGS,
-            privacy_status="unlisted",
-        )
+            video_id = publisher.upload_short(
+                video_path=video_path,
+                title=content["title"],
+                description=content["description"],
+                tags=DEFAULT_TAGS,
+                privacy_status="unlisted",
+            )
 
-        if thumb_path.exists():
-            if publisher.set_thumbnail(video_id, thumb_path):
-                print(f"Thumbnail uploaded: {thumb_path}")
-            else:
+            if thumb_path.exists():
+                if publisher.set_thumbnail(video_id, thumb_path):
+                    print(f"Thumbnail uploaded: {thumb_path}")
+                else:
+                    print(
+                        "Thumbnail saved locally - upload manually after "
+                        "YouTube phone verification (Advanced features)."
+                    )
+
+            youtube_url = YouTubePublisher.short_url(video_id)
+            studio = YouTubePublisher.studio_url(video_id)
+            pending_entry = _save_pending(video_id, content["title"], config=config)
+            auto_on = auto_publish_enabled(config)
+            delay = auto_publish_delay_minutes(config)
+            result.update({
+                "status": "uploaded",
+                "video_id": video_id,
+                "url": youtube_url,
+                "auto_publish": auto_on,
+            })
+            print(f"\nUploaded (unlisted): {youtube_url}")
+            if auto_on:
+                print(f"Auto-publish in ~{delay} min (disable: YOUTUBE_AUTO_PUBLISH=0)")
+        except Exception as yt_exc:
+            from google.auth.exceptions import RefreshError
+
+            msg = str(yt_exc)
+            is_oauth = isinstance(yt_exc, RefreshError) or "invalid_grant" in msg
+            result["status"] = "rendered_youtube_auth_failed" if is_oauth else "rendered_youtube_failed"
+            result["youtube_error"] = msg
+            print(f"YouTube upload failed (video kept): {yt_exc}")
+            if is_oauth:
                 print(
-                    "Thumbnail saved locally - upload manually after "
-                    "YouTube phone verification (Advanced features)."
+                    "Fix: python setup_youtube_oauth.py --force\n"
+                    "Then update Railway secret YOUTUBE_CRYPTO_TOKEN_JSON "
+                    "from tokens/coin_wire_token.json"
                 )
-
-        youtube_url = YouTubePublisher.short_url(video_id)
-        studio = YouTubePublisher.studio_url(video_id)
-        pending_entry = _save_pending(video_id, content["title"], config=config)
-        auto_on = auto_publish_enabled(config)
-        delay = auto_publish_delay_minutes(config)
-        result.update({
-            "status": "uploaded",
-            "video_id": video_id,
-            "url": youtube_url,
-            "auto_publish": auto_on,
-        })
-        print(f"\nUploaded (unlisted): {youtube_url}")
-        if auto_on:
-            print(f"Auto-publish in ~{delay} min (disable: YOUTUBE_AUTO_PUBLISH=0)")
+                try:
+                    TelegramPublisher().notify_owner(
+                        "Coin Wire: YouTube OAuth expired (invalid_grant).\n"
+                        "Video rendered but NOT uploaded.\n\n"
+                        f"File: {video_path.name}\n"
+                        "Fix locally: python setup_youtube_oauth.py --force\n"
+                        "Then paste new tokens/coin_wire_token.json into "
+                        "Railway YOUTUBE_CRYPTO_TOKEN_JSON.",
+                        buttons=control_keyboard(),
+                    )
+                except Exception:
+                    pass
+            else:
+                raise
 
     # TikTok / Instagram / Threads (independent of YouTube)
     print("\n[crosspost] Starting TikTok / Instagram / Threads...")

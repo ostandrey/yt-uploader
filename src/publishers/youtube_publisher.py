@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -40,8 +41,11 @@ class YouTubePublisher:
         self.token_file.parent.mkdir(parents=True, exist_ok=True)
         self._service = None
 
-    def _load_credentials(self) -> Credentials:
+    def _load_credentials(self, *, force_login: bool = False) -> Credentials:
         creds: Optional[Credentials] = None
+        if force_login and self.token_file.exists():
+            self.token_file.unlink()
+
         if self.token_file.exists():
             creds = Credentials.from_authorized_user_file(str(self.token_file), SCOPES)
 
@@ -49,14 +53,24 @@ class YouTubePublisher:
             return creds
 
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            self._save_token(creds)
-            return creds
+            try:
+                creds.refresh(Request())
+                self._save_token(creds)
+                return creds
+            except RefreshError:
+                # Revoked / invalid refresh token — fall through to browser login
+                if self.token_file.exists():
+                    self.token_file.unlink()
 
         flow = InstalledAppFlow.from_client_config(
             oauth_client_config_from_env(), SCOPES
         )
-        creds = flow.run_local_server(port=0)
+        # offline + consent → durable refresh_token (needed for Railway / long-lived upload)
+        creds = flow.run_local_server(
+            port=0,
+            access_type="offline",
+            prompt="consent",
+        )
         self._save_token(creds)
         return creds
 

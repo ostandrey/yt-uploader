@@ -36,7 +36,8 @@ sys.path.insert(0, str(ROOT))
 REDIRECT_URI = "https://ostandrey.github.io/yt-uploader/oauth-callback.html"
 AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/"
 TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
-SCOPES = "user.info.basic,video.upload"
+# video.upload = draft/inbox; video.publish = direct post (needs Direct Post ON)
+SCOPES = "user.info.basic,video.upload,video.publish"
 TOKEN_FILE = ROOT / "tokens" / "tiktok_token.json"
 
 
@@ -126,24 +127,29 @@ def run_oauth() -> None:
     print("  python setup_tiktok_oauth.py --upload data/storage/coin_wire/videos/<file>.mp4")
 
 
-def run_upload(video_path: Path) -> None:
+def run_upload(video_path: Path, *, direct: bool = False) -> None:
     load_dotenv(ROOT / ".env")
     from src.publishers.tiktok_publisher import TikTokPublisher
 
-    # Unaudited / Sandbox often requires SELF_ONLY
-    publisher = TikTokPublisher(privacy_level="SELF_ONLY")
+    # Default: inbox/draft (matches Sandbox consent video.upload).
+    # --direct needs video.publish scope + Direct Post enabled.
+    publisher = TikTokPublisher(
+        privacy_level="SELF_ONLY",
+        draft=not direct,
+    )
     if not publisher.configured():
         raise SystemExit("No token. Run: python setup_tiktok_oauth.py")
     if not video_path.exists():
         raise SystemExit(f"File not found: {video_path}")
 
-    print(f"Uploading (SELF_ONLY): {video_path}")
+    mode = "direct/SELF_ONLY" if direct else "draft/inbox"
+    print(f"Uploading ({mode}): {video_path}")
     result = publisher.upload_video(
         video_path,
         caption="Coin Wire sandbox demo #crypto #news",
     )
     print("Result:", json.dumps(result, indent=2)[:800])
-    print("Check TikTok app → Activity / Inbox / Private posts (Sandbox).")
+    print("Check TikTok app → Inbox / Drafts (Sandbox).")
 
 
 def main() -> None:
@@ -153,9 +159,14 @@ def main() -> None:
         type=Path,
         help="Upload an existing MP4 after OAuth (Sandbox demo)",
     )
+    parser.add_argument(
+        "--direct",
+        action="store_true",
+        help="Direct post (needs video.publish). Default is draft/inbox.",
+    )
     args = parser.parse_args()
     if args.upload:
-        run_upload(args.upload)
+        run_upload(args.upload, direct=args.direct)
     else:
         run_oauth()
 

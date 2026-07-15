@@ -23,9 +23,36 @@ from dotenv import load_dotenv
 log = logging.getLogger(__name__)
 
 INIT_URL = "https://open.tiktokapis.com/v2/post/publish/video/init/"
+INIT_INBOX_URL = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
 STATUS_URL = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
 REFRESH_URL = "https://open.tiktokapis.com/v2/oauth/token/"
 TOKEN_FILE = Path("tokens/tiktok_token.json")
+
+# TikTok FILE_UPLOAD chunk rules (see Content Posting media transfer guide)
+_MIN_CHUNK = 5 * 1024 * 1024
+_MAX_CHUNK = 64 * 1024 * 1024
+_DEFAULT_CHUNK = 10 * 1024 * 1024
+
+
+def _plan_chunks(video_size: int) -> tuple[int, int]:
+    """Return (chunk_size, total_chunk_count) valid for TikTok FILE_UPLOAD."""
+    if video_size <= 0:
+        raise ValueError("video_size must be positive")
+    if video_size < _MIN_CHUNK:
+        return video_size, 1
+    if video_size <= _MAX_CHUNK:
+        return video_size, 1
+    chunk_size = _DEFAULT_CHUNK
+    total = video_size // chunk_size
+    # Last chunk absorbs remainder; must stay >= 5MB and <= 128MB.
+    remainder = video_size - (total - 1) * chunk_size if total > 0 else video_size
+    if total < 1:
+        total = 1
+    if remainder > 128 * 1024 * 1024:
+        # rarer huge-trail case: use larger base chunk
+        chunk_size = _MAX_CHUNK
+        total = video_size // chunk_size
+    return chunk_size, total
 
 
 class TikTokPublisher:
@@ -33,11 +60,15 @@ class TikTokPublisher:
         self,
         access_token: Optional[str] = None,
         privacy_level: str = "PUBLIC_TO_EVERYONE",
+        *,
+        draft: bool = False,
     ):
         load_dotenv()
         self.client_key = os.getenv("TIKTOK_CLIENT_KEY", "")
         self.client_secret = os.getenv("TIKTOK_CLIENT_SECRET", "")
         self.privacy_level = privacy_level
+        # draft=True → inbox API (scope video.upload). Direct post needs video.publish.
+        self.draft = draft
         self.access_token = access_token or self._load_access_token()
 
     def configured(self) -> bool:
@@ -128,29 +159,36 @@ class TikTokPublisher:
             raise FileNotFoundError(video_path)
 
         size = video_path.stat().st_size
-        init_body = {
-            "post_info": {
-                "title": caption[:2200],
-                "privacy_level": self.privacy_level,
-                "disable_duet": False,
-                "disable_comment": False,
-                "disable_stitch": False,
-                "video_cover_timestamp_ms": 1000,
-            },
-            "source_info": {
-                "source": "FILE_UPLOAD",
-                "video_size": size,
-                "chunk_size": size,
-                "total_chunk_count": 1,
-            },
+        chunk_size, total_chunks = _plan_chunks(size)
+        source_info = {
+            "source": "FILE_UPLOAD",
+            "video_size": size,
+            "chunk_size": chunk_size,
+            "total_chunk_count": total_chunks,
         }
+        if self.draft:
+            init_url = INIT_INBOX_URL
+            init_body = {"source_info": source_info}
+        else:
+            init_url = INIT_URL
+            init_body = {
+                "post_info": {
+                    "title": caption[:2200],
+                    "privacy_level": self.privacy_level,
+                    "disable_duet": False,
+                    "disable_comment": False,
+                    "disable_stitch": False,
+                    "video_cover_timestamp_ms": 1000,
+                },
+                "source_info": source_info,
+            }
 
         response = requests.post(
-            INIT_URL, headers=self._headers(), json=init_body, timeout=60
+            init_url, headers=self._headers(), json=init_body, timeout=60
         )
         if response.status_code == 401 and self.refresh_access_token():
             response = requests.post(
-                INIT_URL, headers=self._headers(), json=init_body, timeout=60
+                init_url, headers=self._headers(), json=init_body, timeout=60
             )
 
         payload = response.json()
@@ -161,31 +199,56 @@ class TikTokPublisher:
             error = payload.get("error") or payload
             raise RuntimeError(f"TikTok init failed: {error}")
 
-        with open(video_path, "rb") as handle:
-            video_bytes = handle.read()
-
-        put = requests.put(
-            upload_url,
-            data=video_bytes,
-            headers={
-                "Content-Type": "video/mp4",
-                "Content-Length": str(size),
-                "Content-Range": f"bytes 0-{size - 1}/{size}",
-            },
-            timeout=300,
-        )
-        if put.status_code not in (200, 201):
-            raise RuntimeError(
-                f"TikTok upload failed ({put.status_code}): {put.text[:300]}"
-            )
+        self._put_file_chunks(video_path, upload_url, size, chunk_size, total_chunks)
 
         status = self._wait_publish(publish_id, max_wait_sec=max_wait_sec)
         return {
             "platform": "tiktok",
             "publish_id": publish_id,
             "status": status.get("status", "unknown"),
+            "draft": self.draft,
             "raw": status,
         }
+
+    def _put_file_chunks(
+        self,
+        video_path: Path,
+        upload_url: str,
+        size: int,
+        chunk_size: int,
+        total_chunks: int,
+    ) -> None:
+        with open(video_path, "rb") as handle:
+            for index in range(total_chunks):
+                start = index * chunk_size
+                if index == total_chunks - 1:
+                    end = size
+                else:
+                    end = start + chunk_size
+                handle.seek(start)
+                chunk = handle.read(end - start)
+                put = requests.put(
+                    upload_url,
+                    data=chunk,
+                    headers={
+                        "Content-Type": "video/mp4",
+                        "Content-Length": str(len(chunk)),
+                        "Content-Range": f"bytes {start}-{end - 1}/{size}",
+                    },
+                    timeout=300,
+                )
+                # 206 = more chunks; 200/201 = done
+                if put.status_code not in (200, 201, 206):
+                    raise RuntimeError(
+                        f"TikTok upload chunk {index + 1}/{total_chunks} "
+                        f"failed ({put.status_code}): {put.text[:300]}"
+                    )
+                log.info(
+                    "TikTok chunk %s/%s uploaded (%s bytes)",
+                    index + 1,
+                    total_chunks,
+                    len(chunk),
+                )
 
     def _wait_publish(self, publish_id: str, *, max_wait_sec: int) -> dict:
         deadline = time.time() + max_wait_sec

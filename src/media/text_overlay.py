@@ -22,8 +22,10 @@ POSITIVE_COLOR = (80, 220, 120)
 NEGATIVE_COLOR = (255, 90, 90)
 STAT_FADE_SEC = 0.35
 STAT_SLIDE_PX = 28
-TICKER_BAR_Y = 1760
-TICKER_BAR_H = 100
+# Above YouTube Shorts bottom UI (~380px chrome) — was 1760 (covered)
+TICKER_BAR_Y = 1540
+TICKER_BAR_H = 96
+SUBTITLE_MARGIN_V = 520  # keep karaoke above ticker
 
 
 def _stat_overlay_y(start: float, fade: float) -> str:
@@ -74,15 +76,20 @@ def create_stat_overlay_png(
         outline=(*accent, 255),
         width=4,
     )
+    # Center text inside the card (avoid left-biased look with font bbox)
+    text_x = box_x + (box_w - text_w) // 2
     draw.text(
-        (box_x + pad_x, box_y + pad_y - bbox[1]),
+        (text_x, box_y + pad_y - bbox[1]),
         text,
         fill=(255, 255, 255, 255),
         font=font_large,
     )
+    brand = "COIN WIRE"
+    brand_bb = draw.textbbox((0, 0), brand, font=font_small)
+    brand_w = brand_bb[2] - brand_bb[0]
     draw.text(
-        (box_x + pad_x, box_y + box_h + 10),
-        "COIN WIRE",
+        (box_x + (box_w - brand_w) // 2, box_y + box_h + 10),
+        brand,
         fill=(*accent, 220),
         font=font_small,
     )
@@ -186,47 +193,40 @@ def create_price_ticker_png(
         width=2,
     )
 
-    x = 48
-    center_y = bar_y + bar_h // 2
     typed: list[MarketQuote] = list(quotes)
-
+    parts: list[tuple[str, tuple[int, int, int], ImageFont.ImageFont]] = []
     for index, quote in enumerate(typed):
         if index > 0:
-            sep = "·"
-            sb = draw.textbbox((0, 0), sep, font=font_sep)
-            sep_h = sb[3] - sb[1]
-            draw.text((x, center_y - sep_h // 2 - sb[1]), sep, fill=(140, 150, 170, 220), font=font_sep)
-            x += sb[2] - sb[0] + 16
-
+            parts.append((" · ", (140, 150, 170), font_sep))
         price_str = (
             f"${quote.price_usd:,.0f}"
             if quote.price_usd >= 1000
             else f"${quote.price_usd:,.2f}"
         )
-        symbol_part = f"{quote.symbol} {price_str} "
-        sym_b = draw.textbbox((0, 0), symbol_part, font=font_main)
-        sym_h = sym_b[3] - sym_b[1]
-        draw.text(
-            (x, center_y - sym_h // 2 - sym_b[1]),
-            symbol_part,
-            fill=(255, 255, 255, 255),
-            font=font_main,
-        )
-        x += sym_b[2] - sym_b[0]
-
+        parts.append((f"{quote.symbol} {price_str}", (255, 255, 255), font_main))
         if quote.change_24h_pct is not None:
             sign = "+" if quote.change_24h_pct >= 0 else ""
-            change_text = f"({sign}{quote.change_24h_pct:.1f}%)"
+            change_text = f" ({sign}{quote.change_24h_pct:.1f}%)"
             change_color = POSITIVE_COLOR if quote.change_24h_pct >= 0 else NEGATIVE_COLOR
-            ch_b = draw.textbbox((0, 0), change_text, font=font_main)
-            ch_h = ch_b[3] - ch_b[1]
-            draw.text(
-                (x, center_y - ch_h // 2 - ch_b[1]),
-                change_text,
-                fill=(*change_color, 255),
-                font=font_main,
-            )
-            x += ch_b[2] - ch_b[0] + 20
+            parts.append((change_text, change_color, font_main))
+
+    total_w = 0
+    for text, _color, font in parts:
+        bb = draw.textbbox((0, 0), text, font=font)
+        total_w += bb[2] - bb[0]
+
+    x = max(40, (SHORT_WIDTH - total_w) // 2)
+    center_y = bar_y + bar_h // 2
+    for text, color, font in parts:
+        bb = draw.textbbox((0, 0), text, font=font)
+        h = bb[3] - bb[1]
+        draw.text(
+            (x, center_y - h // 2 - bb[1]),
+            text,
+            fill=(*color, 255),
+            font=font,
+        )
+        x += bb[2] - bb[0]
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path)

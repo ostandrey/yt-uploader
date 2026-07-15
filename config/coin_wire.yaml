@@ -10,7 +10,7 @@ settings:
   visual_source: "stock_video"
   voiceover: true
   voice: "en-US-ChristopherNeural"
-  voice_rate: "-8%"
+  voice_rate: "+8%"   # was -8% (too slow for news Shorts); +8% ≈ brisk CTV pace
   price_overlay: true
   video_format: "9:16"
   resolution: "1080x1920"

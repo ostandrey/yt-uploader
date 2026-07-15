@@ -116,7 +116,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial Black,96,&H00FFFFFF,&H40FFFFFF,&H00000000,&HE0000000,-1,0,0,0,100,100,0,0,1,10,6,2,50,50,400,1
+Style: Default,Arial Black,96,&H00FFFFFF,&H40FFFFFF,&H00000000,&HE0000000,-1,0,0,0,100,100,0,0,1,10,6,2,50,50,520,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
