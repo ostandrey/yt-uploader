@@ -140,6 +140,14 @@ def _preflight() -> None:
     if not pexels and not pixabay:
         log.warning("No PEXELS_API_KEY or PIXABAY_API_KEY — stock footage may be limited")
 
+    # Pull B-roll MP4s from R2/S3 onto persistent volume (incremental).
+    try:
+        from src.media.broll_sync import ensure_library_on_start
+
+        ensure_library_on_start()
+    except Exception as exc:
+        log.warning("B-roll sync failed (will fall back to live Pexels): %s", exc)
+
 
 def main() -> None:
     load_dotenv(ROOT / ".env")

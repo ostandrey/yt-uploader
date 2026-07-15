@@ -100,6 +100,8 @@ broll_library:
   scored_pick: true                # prefer has_screen / good_for_hook
   rotate_used_clips: true          # persist used ids under data/storage/coin_wire/
   clip_index: true                 # python scripts/index_broll_library.py
+  # Railway: upload once → R2, worker pulls to volume /app/data
+  #   python scripts/sync_broll_library.py --upload
 
 automation:
   timezone: "America/New_York"   # US Eastern — primary English crypto audience

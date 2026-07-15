@@ -49,6 +49,18 @@ CROSSPOST_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 CROSSPOST_S3_REGION=auto
 # R2: leave ACL empty (bucket policy / public dev URL handles access)
 
+# B-roll library sync (same R2 bucket OK — private prefix broll_library/)
+# 1) PC:  python scripts/sync_broll_library.py --upload
+# 2) Railway: mount volume at /app/data (persists library across deploys)
+# 3) Worker auto-downloads missing clips on start (set 0 to disable)
+# BROLL_SYNC_ON_START=1
+# Optional overrides (default = CROSSPOST_S3_*):
+# BROLL_S3_BUCKET=
+# BROLL_S3_ACCESS_KEY=
+# BROLL_S3_SECRET_KEY=
+# BROLL_S3_ENDPOINT=
+# BROLL_S3_PREFIX=broll_library
+
 # Optional LLM copy (OpenAI-compatible). Leave empty to use rule-based text only.
 # COPY_LLM_API_KEY=
 # COPY_LLM_MODEL=gpt-4o-mini

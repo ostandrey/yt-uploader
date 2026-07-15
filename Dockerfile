@@ -13,7 +13,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p data/storage/coin_wire/videos data/storage/coin_wire/renders tokens
+RUN mkdir -p \
+    data/storage/coin_wire/videos \
+    data/storage/coin_wire/renders \
+    data/assets/broll_library \
+    tokens
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONIOENCODING=utf-8
