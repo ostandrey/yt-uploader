@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Coin Wire — TikTok OAuth callback</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #111; }
+    code, pre { background: #f2f2f2; padding: 0.2rem 0.4rem; border-radius: 4px; word-break: break-all; }
+    pre { padding: 1rem; overflow-x: auto; }
+    .ok { color: #0a7a2f; }
+    .err { color: #b00020; }
+  </style>
+</head>
+<body>
+  <h1>TikTok OAuth callback</h1>
+  <p>Coin Wire local auth helper. Copy the <strong>code</strong> below into the OAuth script / terminal.</p>
+  <p id="status">Reading URL…</p>
+  <pre id="out"></pre>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const error = params.get("error");
+    const desc = params.get("error_description");
+    const status = document.getElementById("status");
+    const out = document.getElementById("out");
+    if (error) {
+      status.className = "err";
+      status.textContent = "Authorization failed.";
+      out.textContent = error + (desc ? "\n" + desc : "");
+    } else if (code) {
+      status.className = "ok";
+      status.textContent = "Success — copy this authorization code:";
+      out.textContent = code;
+    } else {
+      status.textContent = "No code in URL. Start OAuth from the Coin Wire setup script.";
+      out.textContent = window.location.href;
+    }
+  </script>
+</body>
+</html>
