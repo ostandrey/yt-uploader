@@ -61,11 +61,21 @@ CROSSPOST_S3_REGION=auto
 # BROLL_S3_ENDPOINT=
 # BROLL_S3_PREFIX=broll_library
 
-# Optional LLM copy (OpenAI-compatible). Leave empty to use rule-based text only.
+# Optional LLM copy + Shorts vision QA (OpenAI-compatible). Leave empty for rules only.
 # COPY_LLM_API_KEY=
 # COPY_LLM_MODEL=gpt-4o-mini
 # COPY_LLM_BASE_URL=https://api.openai.com/v1
 # COPY_LLM_ENABLED=1
+
+# Phone desk (FastAPI PWA). Worker always serves /health on PORT.
+# Empty DESK_PASSWORD = UI off (health still up for Railway).
+# DESK_PASSWORD=long-random-string
+# DESK_SECRET=another-random-string
+# DESK_SESSION_HOURS=12
+# DESK_PUBLIC_URL=https://your-service.up.railway.app
+# DESK_PORT=8080          # local; on Railway uses PORT
+# DESK_SECURE=1           # force Secure cookie (HTTPS)
+# DESK_DB=                # default: data/storage/coin_wire/desk.sqlite on the volume
 
 # Schedule: config/coin_wire.yaml (timezone America/New_York)
 # Railway: mount volumes at /app/data and /app/tokens

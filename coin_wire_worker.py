@@ -253,6 +253,13 @@ def main() -> None:
     log.info("Worker ready at %s", datetime.now().isoformat())
 
     try:
+        from src.desk.server import start_desk_thread
+
+        start_desk_thread()
+    except Exception as exc:
+        log.warning("Desk did not start: %s", exc)
+
+    try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         log.info("Worker stopped.")

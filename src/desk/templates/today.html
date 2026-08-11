@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Сьогодні — Coin Wire desk{% endblock %}
+{% block body %}
+{% if not pack %}
+<h1>Немає Short</h1>
+<p class="muted">Воркер ще не зрендерив ролик, або volume /app/data порожній.</p>
+{% else %}
+<h1>{{ pack.title }}</h1>
+<div class="meta">
+  {% if pack.qa_score is not none %}<span class="badge">QA {{ pack.qa_score }}/100</span>{% endif %}
+  {% if pack.bytes %}<span class="badge">{{ (pack.bytes / 1000000) | round(1) }} MB</span>{% endif %}
+</div>
+{% if pack.youtube_url %}
+<p class="muted"><a href="{{ pack.youtube_url }}" target="_blank" rel="noopener">YouTube</a></p>
+{% endif %}
+<p class="hint">Порядок: Copy → Share → Post у додатку. Якщо опис порожній — встав з буфера.</p>
+<p id="pwa-hint" class="hint" hidden>Додай ярлик на домашній екран — тоді це два тапи, без Safari-хрома.</p>
+
+<div class="card">
+  <video id="v" controls playsinline preload="metadata" poster="{% if has_thumb %}/media/thumb.jpg{% endif %}" src="/media/latest.mp4"></video>
+  <a class="ghost btn save" href="/media/latest.mp4?dl=1" download="coinwire.mp4">Зберегти MP4</a>
+</div>
+
+<textarea id="clip-fallback" class="visually-hidden" aria-hidden="true" readonly></textarea>
+
+<section class="card platform" data-platform="tiktok">
+  <h2>1. TikTok {% if pack.marks.tiktok %}<span class="done">✓</span>{% endif %}</h2>
+  <p class="step">Спочатку Copy, потім Share</p>
+  <div class="row">
+    <button type="button" class="ghost" data-copy="ig_caption">Copy опис</button>
+    <button type="button" class="primary" data-share="tiktok">Share відео</button>
+  </div>
+  {% if pack.id %}<label class="mark"><input type="checkbox" data-mark="tiktok" {% if pack.marks.tiktok %}checked{% endif %}> Вже запостив</label>{% endif %}
+  <details>
+    <summary>Показати опис</summary>
+    <textarea readonly data-select>{{ pack.ig_caption or pack.title }}</textarea>
+  </details>
+</section>
+
+<section class="card platform" data-platform="instagram">
+  <h2>2. Instagram Reel {% if pack.marks.instagram %}<span class="done">✓</span>{% endif %}</h2>
+  <p class="step">Той самий файл і той самий опис</p>
+  <div class="row">
+    <button type="button" class="ghost" data-copy="ig_caption">Copy опис</button>
+    <button type="button" class="primary" data-share="instagram">Share відео</button>
+  </div>
+  {% if pack.id %}<label class="mark"><input type="checkbox" data-mark="instagram" {% if pack.marks.instagram %}checked{% endif %}> Вже запостив</label>{% endif %}
+  <details>
+    <summary>Показати опис</summary>
+    <textarea readonly data-select>{{ pack.ig_caption or pack.title }}</textarea>
+  </details>
+</section>
+
+<section class="card platform" data-platform="threads">
+  <h2>3. Threads {% if pack.marks.threads %}<span class="done">✓</span>{% endif %}</h2>
+  <p class="step">Тільки текст, без відео</p>
+  <div class="row">
+    <button type="button" class="ghost" data-copy="threads_text">Copy текст</button>
+    <button type="button" class="primary" data-share="threads">Share текст</button>
+  </div>
+  {% if pack.id %}<label class="mark"><input type="checkbox" data-mark="threads" {% if pack.marks.threads %}checked{% endif %}> Вже запостив</label>{% endif %}
+  <details>
+    <summary>Показати текст</summary>
+    <textarea readonly data-select>{{ pack.threads_text or pack.title }}</textarea>
+  </details>
+</section>
+
+<div id="dock" hidden>
+  <button type="button" class="primary" id="dock-btn">Далі: Share</button>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if pack %}
+<script type="application/json" id="pack-json">{{ pack | tojson }}</script>
+<script src="/static/desk.js" defer></script>
+{% endif %}
+{% endblock %}

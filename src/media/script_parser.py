@@ -458,16 +458,8 @@ def extract_stat_overlays(script: str) -> List[StatOverlay]:
 
 
 def extract_outro_summary(script: str) -> str:
-    """One-line value hook for the outro card."""
-    lower = script.lower()
-    if "volatile" in lower or "sensitive" in lower or "fed" in lower:
-        return "Markets remain volatile - follow for the next shift."
-    if "bitcoin" in lower or "crypto" in lower:
-        return "Crypto moves fast - follow for daily updates."
-    sentences = split_sentences(script)
-    if len(sentences) >= 2:
-        candidate = sentences[-2].strip()
-        if len(candidate) > 55:
-            candidate = candidate[:52] + "..."
-        return candidate
-    return "Follow for the next market shift."
+    """Brand CTA for the outro card — never restate the news beat."""
+    # Keep visual outro short and distinct from voiceover; repeating
+    # sentences[-2] made the ending feel as long as the whole story.
+    _ = script
+    return "Follow @coinwirenews"

@@ -1,7 +1,8 @@
 # Coin Wire — BMAD analysis brief
 
-**Status:** Fill + YOLO + scored pick done; **CLIP index + humanized TG takeaways** shipped.  
-**Next:** `python scripts/index_broll_library.py` (full library), then optional `--apply-move`.
+**Status:** Shorts quality epic — Showrunner cast 2026-07-22; Sprint 1 pacing coded.  
+**Next:** Phone MP4 via Telegram + Shorts QA; fix YouTube token/volumes; Sprint 2B cuts. See `docs/tech_and_next_actions.md`.  
+**Synthesis:** `_bmad-output/planning-artifacts/coin-wire-staff-synthesis.md`
 
 Communication / docs language for BMAD config: **uk**.
 

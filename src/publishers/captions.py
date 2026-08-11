@@ -83,3 +83,47 @@ def build_threads_text(
         lines.append(pick_threads_tags(seed))
     text = "\n\n".join(line for line in lines if line)
     return text[:500]
+
+
+def phone_copy_packs(
+    title: str,
+    *,
+    youtube_url: str = "",
+    ig_caption: str = "",
+    threads_text: str = "",
+) -> list[tuple[str, str]]:
+    """Hint + body pairs. Body is meant to be copied as-is (no extra lines)."""
+    ig = ig_caption.strip() or build_caption(title, max_len=400, include_disclaimer=True)
+    threads = threads_text.strip() or build_threads_text(title, youtube_url=youtube_url)
+    packs = [
+        ("TikTok / IG — long-press NEXT message → Copy", ig[:400]),
+        ("Threads — long-press NEXT message → Copy (text only, no video)", threads[:500]),
+    ]
+    if youtube_url:
+        packs.append(
+            (
+                "X — optional, long-press NEXT → Copy",
+                f"{title.strip()[:180]}\n{youtube_url}",
+            )
+        )
+    return packs
+
+
+def build_phone_repost_caption(
+    title: str,
+    *,
+    youtube_url: str = "",
+    ig_caption: str = "",
+    threads_text: str = "",
+) -> str:
+    """Single-message fallback if split copy packs cannot be sent."""
+    packs = phone_copy_packs(
+        title,
+        youtube_url=youtube_url,
+        ig_caption=ig_caption,
+        threads_text=threads_text,
+    )
+    parts = [title.strip(), youtube_url, "", "PHONE: save video → gallery → app"]
+    for hint, body in packs:
+        parts.extend(["", hint, body])
+    return "\n".join(p for p in parts if p).strip()

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Статистика — Coin Wire desk{% endblock %}
+{% block body %}
+<h1>Пульт</h1>
+<div class="stat-grid">
+  <div><span class="muted">Shorts</span><b>{{ snap.shorts_on_desk }}</b></div>
+  <div><span class="muted">YouTube черга</span><b>{{ snap.pending_youtube }}</b></div>
+  <div><span class="muted">TikTok ✓</span><b>{{ snap.posted_tiktok }}</b></div>
+  <div><span class="muted">IG ✓</span><b>{{ snap.posted_instagram }}</b></div>
+  <div><span class="muted">Threads ✓</span><b>{{ snap.posted_threads }}</b></div>
+  <div><span class="muted">Статті used</span><b>{{ snap.articles_used }}</b></div>
+</div>
+<p class="muted" style="margin-top:12px">Останній: {{ snap.latest_title or "—" }}{% if snap.latest_at %} · {{ snap.latest_at }}{% endif %}</p>
+
+<h2>Ролики</h2>
+{% if snap.history %}
+<ul>
+  {% for item in snap.history %}
+  <li>
+    {{ item.when }} — {{ item.title }}
+    {% if item.marks.tiktok %} T✓{% endif %}
+    {% if item.marks.instagram %} IG✓{% endif %}
+    {% if item.marks.threads %} Th✓{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">Поки порожньо.</p>
+{% endif %}
+
+<h2>YouTube черга</h2>
+{% if snap.pending %}
+<ul>
+  {% for p in snap.pending %}
+  <li>{{ p.status }} — {{ p.title or p.video_id }}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">Немає черги.</p>
+{% endif %}
+<p class="hint">Це журнал з телефону + volume воркера. Перегляди YouTube сюди самі не підтягуються.</p>
+{% endblock %}

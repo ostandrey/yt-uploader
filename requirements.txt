@@ -23,3 +23,9 @@ apscheduler==3.10.4
 
 # S3-compatible public media host (Instagram / Threads need a public video URL)
 boto3>=1.34.0
+
+# Phone desk (PWA)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+jinja2>=3.1.4
+python-multipart>=0.0.12

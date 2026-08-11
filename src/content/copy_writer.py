@@ -66,7 +66,7 @@ Tier: {tier}
 Return JSON:
 {{
   "short_title": "YouTube Short title, max 90 chars",
-  "script_lines": ["5 to 7 short spoken sentences for a 25-35 sec voiceover", "..."],
+  "script_lines": ["3 to 5 short spoken sentences for a 18-28 sec voiceover; last line is a short CTA only", "..."],
   "threads_text": "Threads post, max 420 chars, headline + 1-2 factual lines",
   "threads_question": "optional engagement question or empty string",
   "ig_caption": "Instagram caption, max 500 chars, factual + 3-5 hashtags at end"
@@ -139,10 +139,10 @@ def _validate_llm_payload(data: dict, article: Dict[str, Any]) -> Optional[Platf
         return None
     script_lines = [_clip(str(line), 160) for line in lines if str(line).strip()]
     script_lines = [line for line in script_lines if line]
-    if len(title) < 12 or len(script_lines) < 4:
+    if len(title) < 12 or len(script_lines) < 3:
         return None
 
-    script = naturalize_text("\n".join(script_lines[:7]))
+    script = naturalize_text("\n".join(script_lines[:5]))
     threads = _clip(str(data.get("threads_text", "")), 420)
     question = _clip(str(data.get("threads_question", "") or ""), 120)
     ig = _clip(str(data.get("ig_caption", "")), 500)

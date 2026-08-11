@@ -153,8 +153,27 @@ def _is_generic_roundup(title: str) -> bool:
     return any(pattern in lower for pattern in GENERIC_TITLE_PATTERNS)
 
 
+_DANGLING_WORDS = frozenset(
+    "to of for with and as on in at from by into amid the a an or nor vs versus "
+    "than after before over under".split()
+)
+
+
+def _last_content_word(text: str) -> str:
+    words = re.findall(r"[A-Za-z']+", text)
+    return words[-1].lower() if words else ""
+
+
+def is_complete_clause(text: str) -> bool:
+    """False when a cut left a dangling preposition / article."""
+    stripped = text.strip().rstrip(".!?")
+    if len(stripped) < 12:
+        return False
+    return _last_content_word(stripped) not in _DANGLING_WORDS
+
+
 def _truncate_at_words(text: str, max_len: int, end: str = ".") -> str:
-    """Cut text at a word boundary — never mid-word."""
+    """Cut text at a word boundary — never mid-word or mid-clause."""
     text = text.strip().rstrip(".")
     if len(text) <= max_len:
         return text + end
@@ -163,7 +182,15 @@ def _truncate_at_words(text: str, max_len: int, end: str = ".") -> str:
     last_space = cut.rfind(" ")
     if last_space > 20:
         cut = cut[:last_space]
-    return cut.rstrip(".,;:-") + end
+    cut = cut.rstrip(".,;:- ")
+    while cut and not is_complete_clause(cut):
+        prev = cut.rfind(" ")
+        if prev < 20:
+            break
+        cut = cut[:prev].rstrip(".,;:- ")
+    if not is_complete_clause(cut):
+        return ""
+    return cut + end
 
 
 def _money_to_words(text: str) -> Optional[str]:
@@ -330,15 +357,20 @@ def _summary_sentences(summary: str, max_count: int = 2) -> List[str]:
             continue
         if len(part) > 115:
             part = _truncate_at_words(part, 115, end=".")
+            if not part:
+                continue
         elif not part.endswith("."):
             part += "."
+        if not is_complete_clause(part):
+            continue
         results.append(part)
         if len(results) >= max_count:
             break
 
     if not results and text:
         line = _truncate_at_words(text, 115, end=".")
-        results.append(line)
+        if line and is_complete_clause(line):
+            results.append(line)
     return results
 
 
@@ -381,19 +413,19 @@ class ShortScriptGenerator:
         else:
             sentences.append(f"Traders are reacting to {context.lower()}.")
 
-        # 4–5. Факты из summary статьи (пересказ, не копипаст заголовка)
-        for fact in _summary_sentences(summary, max_count=2):
+        # 4. One fact from summary (keep under ~25–30s spoken)
+        for fact in _summary_sentences(summary, max_count=1):
             if fact not in sentences:
                 sentences.append(fact)
 
-        # 6. Рыночный вывод — добиваем до ~25–35 сек
-        if len(sentences) < 5:
+        # 5. Optional market beat only if still thin
+        if len(sentences) < 3:
             sentences.append(_market_impact(context))
 
-        # 7. CTA
-        sentences.append("Get the next shift. Follow Coin Wire for daily market moves.")
+        # 6. Punchy CTA — one short line (old CTA was almost another news beat)
+        sentences.append("Follow Coin Wire for the next move.")
 
-        script = "\n".join(sentences[:7])
+        script = "\n".join(sentences[:5])
         short_title = _short_title(title, moves)
 
         keywords = self._keywords(combined, moves)

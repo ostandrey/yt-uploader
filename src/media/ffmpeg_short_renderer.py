@@ -32,9 +32,10 @@ from src.media.whisper_timestamps import refine_word_timestamps
 SHORT_WIDTH = 1080
 SHORT_HEIGHT = 1920
 FPS = 30
-TRANSITION_SEC = 0.25
-HOOK_INTRO_SEC = 2.5
-OUTRO_DURATION_SEC = 3.0
+TRANSITION_SEC = 0.2
+HOOK_INTRO_SEC = 1.8
+# Brand end-card only — not a second news beat. Was 3.0s + silence.
+OUTRO_DURATION_SEC = 1.2
 SCALE_CROP_FILTER = (
     f"scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,"
     f"crop={SHORT_WIDTH}:{SHORT_HEIGHT},setsar=1"

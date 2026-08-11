@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import List, Optional, Sequence, Union
 
 import requests
@@ -137,3 +138,78 @@ class TelegramPublisher:
         if not self.notify_chat_id:
             raise ValueError("TELEGRAM_CHAT_ID is not set")
         return self._send(self.notify_chat_id, text, buttons=buttons)
+
+    def send_owner_video(
+        self,
+        video_path: Path,
+        caption: str,
+        *,
+        buttons: Optional[ButtonsArg] = None,
+        max_bytes: int = 49_000_000,
+    ) -> dict:
+        """Send MP4 to owner chat so they can re-upload from a phone."""
+        if not self.notify_chat_id:
+            raise ValueError("TELEGRAM_CHAT_ID is not set")
+        if not self.bot_token:
+            raise ValueError("TELEGRAM bot token is missing")
+        video_path = Path(video_path)
+        if not video_path.exists():
+            raise FileNotFoundError(video_path)
+        size = video_path.stat().st_size
+        if size > max_bytes:
+            raise ValueError(
+                f"Video too large for Telegram bot API ({size} bytes, max {max_bytes})"
+            )
+        payload = {
+            "chat_id": self.notify_chat_id,
+            "caption": caption[:1024],
+            "supports_streaming": "true",
+        }
+        keyboard = normalize_keyboard(buttons)
+        if keyboard:
+            payload["reply_markup"] = json.dumps(
+                {"inline_keyboard": keyboard}, ensure_ascii=False
+            )
+        with video_path.open("rb") as handle:
+            response = requests.post(
+                f"{self.api_base}/sendVideo",
+                data=payload,
+                files={"video": (video_path.name, handle, "video/mp4")},
+                timeout=180,
+            )
+        data = response.json()
+        if not data.get("ok"):
+            raise RuntimeError(f"Telegram sendVideo error: {data}")
+        return data
+
+    def send_owner_photo(self, image_path: Path, caption: str = "") -> dict:
+        if not self.notify_chat_id:
+            raise ValueError("TELEGRAM_CHAT_ID is not set")
+        if not self.bot_token:
+            raise ValueError("TELEGRAM bot token is missing")
+        image_path = Path(image_path)
+        if not image_path.exists():
+            raise FileNotFoundError(image_path)
+        payload = {"chat_id": self.notify_chat_id}
+        if caption.strip():
+            payload["caption"] = caption.strip()[:1024]
+        with image_path.open("rb") as handle:
+            response = requests.post(
+                f"{self.api_base}/sendPhoto",
+                data=payload,
+                files={"photo": (image_path.name, handle, "image/jpeg")},
+                timeout=60,
+            )
+        data = response.json()
+        if not data.get("ok"):
+            raise RuntimeError(f"Telegram sendPhoto error: {data}")
+        return data
+
+    def send_owner_copy_packs(self, packs: list[tuple[str, str]]) -> None:
+        """Two messages per platform: hint, then copyable body only."""
+        for hint, body in packs:
+            body = (body or "").strip()
+            if not body:
+                continue
+            self.notify_owner(hint)
+            self.notify_owner(body)

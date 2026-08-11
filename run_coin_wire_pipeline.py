@@ -23,6 +23,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import yaml
 from dotenv import load_dotenv
@@ -38,9 +39,13 @@ from src.publishers.pending_publish import (
     auto_publish_delay_minutes,
     auto_publish_enabled,
 )
+from src.publishers.captions import phone_copy_packs
 from src.publishers.crosspost import format_crosspost_summary, run_crosspost
 from src.publishers.telegram_publisher import TelegramPublisher, control_keyboard
 from src.publishers.youtube_publisher import YouTubePublisher
+from src.desk.catalog import write_desk_pack
+from src.media.instagram_feed_image import create_instagram_feed_assets
+from src.media.shorts_qa import review_short
 
 VIDEOS_DIR = ROOT / "data" / "storage" / "coin_wire" / "videos"
 USED_SHORTS_FILE = ROOT / "data" / "storage" / "coin_wire" / "used_short_articles.json"
@@ -74,6 +79,81 @@ def _save_used_short_hash(article_hash: str) -> None:
     trimmed = list(used)[-200:]
     payload = {"hashes": trimmed, "updated": datetime.now(timezone.utc).isoformat()}
     USED_SHORTS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _send_phone_kit(
+    tg: TelegramPublisher,
+    *,
+    video_path: Path,
+    work_dir: Path,
+    content: dict,
+    youtube_url: str = "",
+    thumbnail_path: Optional[Path] = None,
+    buttons=None,
+    video_caption: str = "",
+) -> None:
+    """MP4 + optional IG JPEGs + copy-paste caption messages."""
+    caption = video_caption or (
+        f"{content['title']}\n"
+        "Save video → gallery. IG: Reel (same file). Threads: text only, next msgs."
+    )
+    try:
+        tg.send_owner_video(video_path, caption, buttons=buttons)
+    except Exception as video_exc:
+        print(f"Telegram video send failed: {video_exc}")
+    try:
+        fallback = thumbnail_path if thumbnail_path and thumbnail_path.exists() else None
+        images = create_instagram_feed_assets(
+            content["title"],
+            work_dir,
+            keywords=content.get("keywords"),
+            carousel=True,
+            thumbnail_fallback=fallback,
+        )
+        for idx, image in enumerate(images[:2]):
+            label = "IG carousel 1/2 (headline) — skip if posting Reel only"
+            if idx == 1:
+                label = "IG carousel 2/2 — skip if posting Reel only"
+            tg.send_owner_photo(image, label)
+    except Exception as img_exc:
+        print(f"Telegram IG stills send failed: {img_exc}")
+    try:
+        tg.send_owner_copy_packs(
+            phone_copy_packs(
+                content["title"],
+                youtube_url=youtube_url,
+                ig_caption=content.get("ig_caption", ""),
+                threads_text=content.get("threads_text", ""),
+            )
+        )
+    except Exception as copy_exc:
+        print(f"Telegram copy packs failed: {copy_exc}")
+
+
+def _publish_desk_pack(
+    content: dict,
+    video_path: Path,
+    work_dir: Path,
+    *,
+    youtube_url: str = "",
+    qa_score=None,
+) -> None:
+    try:
+        write_desk_pack(
+            title=content["title"],
+            video_path=video_path,
+            work_dir=work_dir,
+            ig_caption=content.get("ig_caption", ""),
+            threads_text=content.get("threads_text", ""),
+            youtube_url=youtube_url,
+            qa_score=qa_score,
+        )
+    except Exception as exc:
+        print(f"Desk pack write failed: {exc}")
+
+
+def _desk_public_url() -> str:
+    return os.getenv("DESK_PUBLIC_URL", "").strip().rstrip("/")
 
 
 def _save_pending(video_id: str, title: str, *, config: dict) -> dict:
@@ -205,8 +285,18 @@ def run_pipeline(
 
     if skip_upload:
         _save_used_short_hash(article["hash"])
+        _publish_desk_pack(content, video_path, work_dir)
         try:
-            TelegramPublisher().notify_owner(
+            tg = TelegramPublisher()
+            _send_phone_kit(
+                tg,
+                video_path=video_path,
+                work_dir=work_dir,
+                content=content,
+                thumbnail_path=thumb_path if thumb_path.exists() else None,
+                buttons=control_keyboard(),
+            )
+            tg.notify_owner(
                 "Coin Wire Short rendered (upload skipped).\n\n"
                 f"Title: {content['title']}\n"
                 f"File: {video_path.name}\n"
@@ -312,6 +402,29 @@ def run_pipeline(
 
     _save_used_short_hash(article["hash"])
 
+    qa_text = ""
+    try:
+        qa = review_short(
+            video_path,
+            work_dir=work_dir,
+            script=content.get("script", ""),
+            title=content["title"],
+        )
+        result["shorts_qa"] = {"score": qa.score, "source": qa.source}
+        qa_text = qa.as_telegram()
+        print(qa_text)
+    except Exception as qa_exc:
+        qa_text = f"Shorts QA skipped: {qa_exc}"
+        print(qa_text)
+
+    _publish_desk_pack(
+        content,
+        video_path,
+        work_dir,
+        youtube_url=youtube_url,
+        qa_score=(result.get("shorts_qa") or {}).get("score"),
+    )
+
     try:
         tg = TelegramPublisher()
         lines = [f"Title: {content['title']}"]
@@ -337,9 +450,29 @@ def run_pipeline(
             lines.append("(Path is on the render host — see console / Railway logs.)")
         lines.append("")
         lines.append(format_crosspost_summary(crosspost))
+        if qa_text:
+            lines.append("")
+            lines.append(qa_text)
+        lines.append("")
+        lines.append(
+            "Phone: video + IG stills above. Copy captions are separate messages."
+        )
+        desk_url = _desk_public_url()
+        if desk_url:
+            lines.append(f"Desk: {desk_url}/")
+        buttons = control_keyboard(video_id or None)
+        _send_phone_kit(
+            tg,
+            video_path=video_path,
+            work_dir=work_dir,
+            content=content,
+            youtube_url=youtube_url,
+            thumbnail_path=thumb_path if thumb_path.exists() else None,
+            buttons=buttons,
+        )
         tg.notify_owner(
             "\n".join(lines),
-            buttons=control_keyboard(video_id or None),
+            buttons=buttons,
         )
     except Exception as exc:
         print(f"Telegram notify failed: {exc}")

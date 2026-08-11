@@ -16,8 +16,9 @@ import imageio_ffmpeg
 
 
 DEFAULT_VOICE = "en-US-AndrewNeural"
-DEFAULT_RATE = "-8%"
-SENTENCE_PAUSE_SEC = 0.4
+DEFAULT_RATE = "+8%"
+# News Shorts: tight beats. 0.4s felt like dead air between every line.
+SENTENCE_PAUSE_SEC = 0.15
 WORDS_PER_LINE = 4
 BOUNDARY_TYPES = ("WordBoundary", "SentenceBoundary")
 

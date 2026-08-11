@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Вхід — Coin Wire desk{% endblock %}
+{% block body %}
+<h1>Coin Wire desk</h1>
+<p class="muted">Приватний пульт. Сесія живе кілька годин, потім знову пароль.</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/login" class="card" autocomplete="on">
+  <label class="visually-hidden" for="username">Логін</label>
+  <input id="username" type="text" name="username" value="desk" autocomplete="username" class="visually-hidden" tabindex="-1">
+  <label for="password">Пароль</label>
+  <input id="password" type="password" name="password" autocomplete="current-password" required autofocus enterkeyhint="go">
+  <p class="hint">Після входу: Share → На екран «Домівка» (iPhone) або меню → Додати на головний (Android).</p>
+  <button class="primary" type="submit">Увійти</button>
+</form>
+{% endblock %}

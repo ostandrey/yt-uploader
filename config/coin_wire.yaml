@@ -10,11 +10,11 @@ settings:
   visual_source: "stock_video"
   voiceover: true
   voice: "en-US-ChristopherNeural"
-  voice_rate: "+8%"   # was -8% (too slow for news Shorts); +8% ≈ brisk CTV pace
+  voice_rate: "+15%"  # tighter news cadence; pause between lines also cut in edge_tts
   price_overlay: true
   video_format: "9:16"
   resolution: "1080x1920"
-  video_duration: "25-40"
+  video_duration: "20-30"  # target: punchy Short, not mini-article
   auto_upload: false
   quality_check: true
   renderer: "ffmpeg"
