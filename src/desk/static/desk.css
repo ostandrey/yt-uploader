@@ -477,6 +477,22 @@ h1, .meta-block h2, .platform h2 {
   flex-direction: column;
   gap: 8px;
 }
+.ig-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin: 12px 0;
+}
+.ig-grid img {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #000;
+  -webkit-touch-callout: default;
+  user-select: none;
+}
 
 .clip-fallback {
   position: absolute !important;

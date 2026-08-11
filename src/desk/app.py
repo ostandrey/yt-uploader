@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import os
+import zipfile
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -108,6 +110,8 @@ def _public_pack(pack: dict | None) -> dict | None:
         "bytes": pack.get("bytes") or 0,
         "updated_at": pack.get("updated_at") or "",
         "marks": {name: bool(marks.get(name)) for name in db.PLATFORMS},
+        "carousel_caption": catalog.carousel_caption_text(),
+        "carousel": [p.name for p in catalog.list_carousel_slides()],
     }
 
 
@@ -225,6 +229,43 @@ def media_video(request: Request, dl: int = 0):
         media_type="video/mp4",
         filename="coinwire.mp4",
         content_disposition_type="attachment" if dl else "inline",
+    )
+
+
+@app.get("/media/ig/{name}")
+def media_ig_slide(request: Request, name: str, dl: int = 0):
+    if not _authed(request):
+        raise HTTPException(401, "auth required")
+    path = catalog.resolve_carousel_slide(name)
+    if not path:
+        raise HTTPException(404, "no slide")
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        filename=path.name,
+        content_disposition_type="attachment" if dl else "inline",
+    )
+
+
+@app.get("/media/ig.zip")
+def media_ig_zip(request: Request):
+    if not _authed(request):
+        raise HTTPException(401, "auth required")
+    slides = catalog.list_carousel_slides()
+    if not slides:
+        raise HTTPException(404, "no carousel")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+        for slide in slides:
+            zf.write(slide, slide.name)
+        caption = catalog.carousel_dir() / "caption.txt"
+        if caption.is_file():
+            zf.write(caption, "caption.txt")
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=coinwire-ig.zip"},
     )
 
 

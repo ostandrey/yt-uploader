@@ -148,6 +148,52 @@
     return pack.ig_caption || pack.title || "";
   }
 
+  async function carouselFiles() {
+    const names = pack.carousel || [];
+    const files = [];
+    for (const name of names) {
+      const res = await fetch("/media/ig/" + encodeURIComponent(name), {
+        credentials: "same-origin",
+      });
+      if (!res.ok) throw new Error("slide " + name);
+      const blob = await res.blob();
+      files.push(new File([blob], name, { type: "image/jpeg" }));
+    }
+    return files;
+  }
+
+  async function shareCarousel(btn) {
+    const caption = pack.carousel_caption || pack.title || "";
+    await copyText(caption);
+    if (btn) {
+      btn.disabled = true;
+      flashLabel(btn, "Завантажую…");
+    }
+    try {
+      const files = await carouselFiles();
+      if (!files.length) {
+        toast("Немає слайдів", false);
+        return;
+      }
+      if (!navigator.share) {
+        toast("Затисни кожен слайд → Зберегти зображення");
+        return;
+      }
+      const payload = { files, title: pack.title || "Coin Wire", text: caption };
+      if (navigator.canShare && !navigator.canShare({ files })) {
+        toast("Затисни кожен слайд → Зберегти зображення");
+        return;
+      }
+      await navigator.share(payload);
+      toast("У Instagram: новий пост → кілька фото з галереї");
+    } catch (err) {
+      if (err && err.name === "AbortError") return;
+      toast("Затисни кожен слайд → Зберегти зображення", false);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   function nextPlatform() {
     return ORDER.find((name) => {
       const box = document.querySelector(`[data-mark="${name}"]`);
@@ -173,6 +219,9 @@
       const ok = await copyText(pack[key] || "");
       if (ok) flashLabel(btn, "Скопійовано");
     });
+  });
+  document.querySelectorAll("[data-share-carousel]").forEach((btn) => {
+    btn.addEventListener("click", () => shareCarousel(btn));
   });
   document.querySelectorAll("[data-share]").forEach((btn) => {
     btn.addEventListener("click", () => {

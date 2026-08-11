@@ -182,6 +182,47 @@ class TelegramPublisher:
             raise RuntimeError(f"Telegram sendVideo error: {data}")
         return data
 
+    def send_owner_album(self, image_paths: list[Path], caption: str = "") -> dict:
+        """sendMediaGroup — carousel JPEGs as one album."""
+        if not self.notify_chat_id:
+            raise ValueError("TELEGRAM_CHAT_ID is not set")
+        if not self.bot_token:
+            raise ValueError("TELEGRAM bot token is missing")
+        paths = [Path(p) for p in image_paths if Path(p).is_file()][:10]
+        if len(paths) < 2:
+            if not paths:
+                raise FileNotFoundError("no carousel images")
+            return self.send_owner_photo(paths[0], caption)
+        media = []
+        files = {}
+        handles = []
+        try:
+            for index, path in enumerate(paths):
+                key = f"photo{index}"
+                handle = path.open("rb")
+                handles.append(handle)
+                files[key] = (path.name, handle, "image/jpeg")
+                item = {"type": "photo", "media": f"attach://{key}"}
+                if index == 0 and caption.strip():
+                    item["caption"] = caption.strip()[:1024]
+                media.append(item)
+            response = requests.post(
+                f"{self.api_base}/sendMediaGroup",
+                data={
+                    "chat_id": self.notify_chat_id,
+                    "media": json.dumps(media),
+                },
+                files=files,
+                timeout=120,
+            )
+        finally:
+            for handle in handles:
+                handle.close()
+        data = response.json()
+        if not data.get("ok"):
+            raise RuntimeError(f"Telegram sendMediaGroup error: {data}")
+        return data
+
     def send_owner_photo(self, image_path: Path, caption: str = "") -> dict:
         if not self.notify_chat_id:
             raise ValueError("TELEGRAM_CHAT_ID is not set")

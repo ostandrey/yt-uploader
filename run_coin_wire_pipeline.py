@@ -92,31 +92,15 @@ def _send_phone_kit(
     buttons=None,
     video_caption: str = "",
 ) -> None:
-    """MP4 + optional IG JPEGs + copy-paste caption messages."""
+    """MP4 + copy-paste captions. IG carousel lives on the desk, not in Telegram."""
     caption = video_caption or (
         f"{content['title']}\n"
-        "Save video → gallery. IG: Reel (same file). Threads: text only, next msgs."
+        "Save video → gallery. IG Reel / Threads: copy from desk."
     )
     try:
         tg.send_owner_video(video_path, caption, buttons=buttons)
     except Exception as video_exc:
         print(f"Telegram video send failed: {video_exc}")
-    try:
-        fallback = thumbnail_path if thumbnail_path and thumbnail_path.exists() else None
-        images = create_instagram_feed_assets(
-            content["title"],
-            work_dir,
-            keywords=content.get("keywords"),
-            carousel=True,
-            thumbnail_fallback=fallback,
-        )
-        for idx, image in enumerate(images[:2]):
-            label = "IG carousel 1/2 (headline) — skip if posting Reel only"
-            if idx == 1:
-                label = "IG carousel 2/2 — skip if posting Reel only"
-            tg.send_owner_photo(image, label)
-    except Exception as img_exc:
-        print(f"Telegram IG stills send failed: {img_exc}")
     try:
         tg.send_owner_copy_packs(
             phone_copy_packs(
@@ -128,6 +112,19 @@ def _send_phone_kit(
         )
     except Exception as copy_exc:
         print(f"Telegram copy packs failed: {copy_exc}")
+
+
+def _render_ig_carousel(content: dict, work_dir: Path) -> None:
+    try:
+        create_instagram_feed_assets(
+            content["title"],
+            work_dir,
+            keywords=content.get("keywords"),
+            carousel=True,
+            content=content,
+        )
+    except Exception as exc:
+        print(f"IG carousel render failed: {exc}")
 
 
 def _publish_desk_pack(
@@ -285,6 +282,7 @@ def run_pipeline(
 
     if skip_upload:
         _save_used_short_hash(article["hash"])
+        _render_ig_carousel(content, work_dir)
         _publish_desk_pack(content, video_path, work_dir)
         try:
             tg = TelegramPublisher()
@@ -417,6 +415,7 @@ def run_pipeline(
         qa_text = f"Shorts QA skipped: {qa_exc}"
         print(qa_text)
 
+    _render_ig_carousel(content, work_dir)
     _publish_desk_pack(
         content,
         video_path,
@@ -455,7 +454,7 @@ def run_pipeline(
             lines.append(qa_text)
         lines.append("")
         lines.append(
-            "Phone: video + IG stills above. Copy captions are separate messages."
+            "Phone: video above. IG carousel + captions: desk site."
         )
         desk_url = _desk_public_url()
         if desk_url:

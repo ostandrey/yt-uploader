@@ -91,14 +91,23 @@ def phone_copy_packs(
     youtube_url: str = "",
     ig_caption: str = "",
     threads_text: str = "",
+    carousel_caption: str = "",
 ) -> list[tuple[str, str]]:
     """Hint + body pairs. Body is meant to be copied as-is (no extra lines)."""
     ig = ig_caption.strip() or build_caption(title, max_len=400, include_disclaimer=True)
     threads = threads_text.strip() or build_threads_text(title, youtube_url=youtube_url)
     packs = [
-        ("TikTok / IG — long-press NEXT message → Copy", ig[:400]),
+        ("TikTok / IG Reel — long-press NEXT message → Copy", ig[:400]),
         ("Threads — long-press NEXT message → Copy (text only, no video)", threads[:500]),
     ]
+    if carousel_caption.strip():
+        packs.insert(
+            1,
+            (
+                "IG carousel caption — long-press NEXT → Copy",
+                carousel_caption.strip()[:2200],
+            ),
+        )
     if youtube_url:
         packs.append(
             (

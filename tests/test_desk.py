@@ -69,10 +69,15 @@ def test_login_and_today(tmp_path, monkeypatch):
     monkeypatch.setattr(catalog, "STORAGE", tmp_path)
     monkeypatch.setattr(catalog, "VIDEOS_DIR", videos)
     monkeypatch.setattr(catalog, "LATEST_FILE", tmp_path / "desk_latest.json")
+    work = tmp_path / "render"
+    slides = work / "ig_carousel"
+    slides.mkdir(parents=True)
+    (slides / "01.jpg").write_bytes(b"jpeg-one")
+    (slides / "caption.txt").write_text("carousel body", encoding="utf-8")
     catalog.write_desk_pack(
         title="Desk title",
         video_path=video,
-        work_dir=tmp_path / "render",
+        work_dir=work,
         ig_caption="ig line",
         threads_text="th line",
     )
@@ -96,6 +101,13 @@ def test_login_and_today(tmp_path, monkeypatch):
     assert 'data-share="tiktok"' in home.text
     assert 'id="pack-json"' in home.text
     assert 'id="dock"' in home.text
+    assert "Instagram карусель" in home.text
+    assert "data-share-carousel" in home.text
+    slide = client.get("/media/ig/01.jpg")
+    assert slide.status_code == 200
+    assert slide.content == b"jpeg-one"
+    zipped = client.get("/media/ig.zip")
+    assert zipped.status_code == 200
     media = client.get("/media/latest.mp4")
     assert media.status_code == 200
     assert media.content == b"fake-mp4"

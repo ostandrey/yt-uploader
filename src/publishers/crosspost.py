@@ -206,6 +206,7 @@ def run_crosspost(
                     keywords=keywords,
                     carousel=use_carousel,
                     thumbnail_fallback=thumbnail_path,
+                    content={"title": title, "keywords": keywords or []},
                 )
                 if not local_images:
                     skipped["instagram_feed"] = (

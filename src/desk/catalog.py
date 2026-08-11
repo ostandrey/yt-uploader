@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -46,6 +47,7 @@ def write_desk_pack(
     }
     STORAGE.mkdir(parents=True, exist_ok=True)
     LATEST_FILE.write_text(json.dumps(pack, indent=2), encoding="utf-8")
+    sync_carousel(work_dir)
     saved = db.upsert_short(pack)
     pack.update(saved)
     return pack
@@ -119,6 +121,55 @@ def resolve_video_file(pack: dict[str, Any]) -> Optional[Path]:
         return None
     if _under(resolved, VIDEOS_DIR) or _under(resolved, STORAGE):
         return resolved
+    return None
+
+
+def carousel_dir() -> Path:
+    return STORAGE / "ig_carousel"
+
+
+def sync_carousel(work_dir: Path) -> list[Path]:
+    """Copy rendered slides onto the volume so desk survives render-folder cleanup."""
+    src = Path(work_dir) / "ig_carousel"
+    dest = carousel_dir()
+    dest.mkdir(parents=True, exist_ok=True)
+    if dest.resolve() != src.resolve():
+        for old in dest.glob("*"):
+            if old.is_file():
+                old.unlink()
+        if src.is_dir():
+            for item in src.iterdir():
+                if item.suffix.lower() in {".jpg", ".jpeg", ".txt"} and item.is_file():
+                    shutil.copy2(item, dest / item.name)
+    return list_carousel_slides()
+
+
+def list_carousel_slides() -> list[Path]:
+    folder = carousel_dir()
+    if not folder.is_dir():
+        return []
+    return sorted(p for p in folder.glob("*.jpg") if p.is_file() and _under(p, folder))
+
+
+def carousel_caption_text() -> str:
+    folder = carousel_dir()
+    path = folder / "caption.txt"
+    if not path.is_file() or not _under(path, folder):
+        return ""
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def resolve_carousel_slide(name: str) -> Optional[Path]:
+    safe = Path(name).name
+    if safe != name or not safe.endswith(".jpg"):
+        return None
+    folder = carousel_dir()
+    path = (folder / safe).resolve()
+    if path.is_file() and _under(path, folder):
+        return path
     return None
 
 

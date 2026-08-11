@@ -20,6 +20,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -44,6 +45,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stdout,
 )
 log = logging.getLogger("coin_wire_worker")
 
@@ -140,18 +142,33 @@ def _preflight() -> None:
     if not pexels and not pixabay:
         log.warning("No PEXELS_API_KEY or PIXABAY_API_KEY — stock footage may be limited")
 
-    # Pull B-roll MP4s from R2/S3 onto persistent volume (incremental).
-    try:
-        from src.media.broll_sync import ensure_library_on_start
 
-        ensure_library_on_start()
-    except Exception as exc:
-        log.warning("B-roll sync failed (will fall back to live Pexels): %s", exc)
+def _sync_broll_background() -> None:
+    """R2 pull can take minutes — never block PORT / Railway health on it."""
+
+    def run() -> None:
+        try:
+            from src.media.broll_sync import ensure_library_on_start
+
+            ensure_library_on_start()
+        except Exception as exc:
+            log.warning("B-roll sync failed (will fall back to live Pexels): %s", exc)
+
+    threading.Thread(target=run, name="broll-sync", daemon=True).start()
 
 
 def main() -> None:
     load_dotenv(ROOT / ".env")
+    # Bind PORT before any slow I/O so Railway healthcheck does not 502.
+    try:
+        from src.desk.server import start_desk_thread
+
+        start_desk_thread()
+    except Exception as exc:
+        log.warning("Desk did not start: %s", exc)
+
     _preflight()
+    _sync_broll_background()
     config = _load_config()
     automation = config.get("automation", {})
     storage_cfg = automation.get("storage", {})
@@ -251,13 +268,6 @@ def main() -> None:
     )
 
     log.info("Worker ready at %s", datetime.now().isoformat())
-
-    try:
-        from src.desk.server import start_desk_thread
-
-        start_desk_thread()
-    except Exception as exc:
-        log.warning("Desk did not start: %s", exc)
 
     try:
         scheduler.start()

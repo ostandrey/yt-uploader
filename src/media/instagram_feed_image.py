@@ -19,7 +19,7 @@ from src.media.stock_image_fetcher import StockImageFetcher
 
 FEED_W = 1080
 FEED_H = 1350
-BRAND = (0, 255, 136)
+BRAND = (240, 180, 41)
 
 _STOCK_KEYWORDS = (
     "bitcoin",
@@ -179,35 +179,18 @@ def create_instagram_feed_assets(
     keywords: Optional[List[str]] = None,
     carousel: bool = False,
     thumbnail_fallback: Optional[Path] = None,
+    content: Optional[dict] = None,
 ) -> List[Path]:
-    """
-    Build 1 (feed) or 2 (carousel) JPEGs for Instagram feed posts.
-    First slide always has the headline; second slide is stock-only.
-    """
-    work_dir.mkdir(parents=True, exist_ok=True)
-    paths: List[Path] = []
+    """Glassdark What Moved pack (6 slides) or slide 1 only."""
+    from src.media.ig_carousel import render_what_moved
 
-    primary = work_dir / "ig_feed_primary.jpg"
-    if create_feed_image_from_stock(title, primary, keywords=keywords, with_headline=True):
-        paths.append(primary)
-    elif thumbnail_fallback and thumbnail_fallback.exists():
-        paths.append(thumbnail_fallback)
-
+    pack = dict(content or {})
+    pack.setdefault("title", title)
+    if keywords:
+        pack.setdefault("keywords", keywords)
+    paths = render_what_moved(pack, Path(work_dir), fetch_stock=True)
     if not paths:
         return []
-
-    if carousel:
-        secondary = work_dir / "ig_feed_secondary.jpg"
-        fetcher = StockImageFetcher()
-        terms = pick_stock_keywords(title, keywords)
-        second_term = terms[-1] if len(terms) > 1 else "crypto market chart"
-        image_meta = fetcher.fetch_image_for_keyword(second_term)
-        if image_meta and fetcher.download_image(image_meta, secondary.with_suffix(".src.jpg")):
-            try:
-                prepared = _prepare_background(secondary.with_suffix(".src.jpg"))
-                prepared.save(secondary, format="JPEG", quality=92, optimize=True)
-                paths.append(secondary)
-            finally:
-                secondary.with_suffix(".src.jpg").unlink(missing_ok=True)
-
+    if not carousel:
+        return paths[:1]
     return paths
