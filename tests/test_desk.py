@@ -92,7 +92,10 @@ def test_login_and_today(tmp_path, monkeypatch):
     home = client.get("/")
     assert home.status_code == 200
     assert "Desk title" in home.text
-    assert "Copy опис" in home.text
+    assert 'data-copy="ig_caption"' in home.text
+    assert 'data-share="tiktok"' in home.text
+    assert 'id="pack-json"' in home.text
+    assert 'id="dock"' in home.text
     media = client.get("/media/latest.mp4")
     assert media.status_code == 200
     assert media.content == b"fake-mp4"

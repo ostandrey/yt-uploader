@@ -1,42 +1,84 @@
 {% extends "base.html" %}
 {% block title %}Статистика — Coin Wire desk{% endblock %}
 {% block body %}
-<h1>Пульт</h1>
-<div class="stat-grid">
-  <div><span class="muted">Shorts</span><b>{{ snap.shorts_on_desk }}</b></div>
-  <div><span class="muted">YouTube черга</span><b>{{ snap.pending_youtube }}</b></div>
-  <div><span class="muted">TikTok ✓</span><b>{{ snap.posted_tiktok }}</b></div>
-  <div><span class="muted">IG ✓</span><b>{{ snap.posted_instagram }}</b></div>
-  <div><span class="muted">Threads ✓</span><b>{{ snap.posted_threads }}</b></div>
-  <div><span class="muted">Статті used</span><b>{{ snap.articles_used }}</b></div>
+<div class="page-wrap">
+  <header class="desk-header">
+    <span class="brand">Coin Wire</span>
+    <div class="header-actions">
+      <a class="btn-ghost btn-compact" href="/">← Сьогодні</a>
+      <form method="post" action="/logout">
+        <button class="btn-ghost btn-compact" type="submit">Вийти</button>
+      </form>
+    </div>
+  </header>
+
+  <main>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <b>{{ snap.shorts_on_desk }}</b>
+        <span>Shorts</span>
+      </div>
+      <div class="stat-card">
+        <b>{{ snap.pending_youtube }}</b>
+        <span>YouTube черга</span>
+      </div>
+      <div class="stat-card">
+        <b class="stat-ok">{{ snap.posted_tiktok }}</b>
+        <span>TikTok ✓</span>
+      </div>
+      <div class="stat-card">
+        <b class="stat-ok">{{ snap.posted_instagram }}</b>
+        <span>IG ✓</span>
+      </div>
+      <div class="stat-card">
+        <b class="stat-ok">{{ snap.posted_threads }}</b>
+        <span>Threads ✓</span>
+      </div>
+      <div class="stat-card">
+        <b>{{ snap.articles_used }}</b>
+        <span>Статті used</span>
+      </div>
+    </div>
+
+    <p class="muted">Останній: {{ snap.latest_title or "—" }}{% if snap.latest_at %} · {{ snap.latest_at }}{% endif %}</p>
+
+    <h3 class="section-title">Ролики</h3>
+    {% if snap.history %}
+    <div class="recent-list">
+      {% for item in snap.history %}
+      <article class="recent-item card">
+        <div>
+          <p class="recent-title">{{ item.title }}</p>
+          <p class="recent-when">{{ item.when }}</p>
+        </div>
+        <div class="badges">
+          <span class="badge {% if item.marks.tiktok %}badge-ok{% else %}badge-info{% endif %}">TT</span>
+          <span class="badge {% if item.marks.instagram %}badge-ok{% else %}badge-info{% endif %}">IG</span>
+          <span class="badge {% if item.marks.threads %}badge-ok{% else %}badge-info{% endif %}">TH</span>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">Поки порожньо.</p>
+    {% endif %}
+
+    <h3 class="section-title">YouTube черга</h3>
+    {% if snap.pending %}
+    <div class="yt-queue">
+      {% for p in snap.pending %}
+      <article class="recent-item card">
+        <div>
+          <p class="recent-title">{{ p.title or p.video_id }}</p>
+        </div>
+        <span class="badge badge-info">{{ p.status }}</span>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">Немає черги.</p>
+    {% endif %}
+    <p class="hint">Це журнал з телефону + volume воркера. Перегляди YouTube сюди самі не підтягуються.</p>
+  </main>
 </div>
-<p class="muted" style="margin-top:12px">Останній: {{ snap.latest_title or "—" }}{% if snap.latest_at %} · {{ snap.latest_at }}{% endif %}</p>
-
-<h2>Ролики</h2>
-{% if snap.history %}
-<ul>
-  {% for item in snap.history %}
-  <li>
-    {{ item.when }} — {{ item.title }}
-    {% if item.marks.tiktok %} T✓{% endif %}
-    {% if item.marks.instagram %} IG✓{% endif %}
-    {% if item.marks.threads %} Th✓{% endif %}
-  </li>
-  {% endfor %}
-</ul>
-{% else %}
-<p class="muted">Поки порожньо.</p>
-{% endif %}
-
-<h2>YouTube черга</h2>
-{% if snap.pending %}
-<ul>
-  {% for p in snap.pending %}
-  <li>{{ p.status }} — {{ p.title or p.video_id }}</li>
-  {% endfor %}
-</ul>
-{% else %}
-<p class="muted">Немає черги.</p>
-{% endif %}
-<p class="hint">Це журнал з телефону + volume воркера. Перегляди YouTube сюди самі не підтягуються.</p>
 {% endblock %}

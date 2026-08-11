@@ -3,6 +3,6 @@
   "short_name": "CW desk",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#070a08",
-  "theme_color": "#070a08"
+  "background_color": "#08090E",
+  "theme_color": "#08090E"
 }
