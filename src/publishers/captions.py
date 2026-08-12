@@ -24,6 +24,19 @@ APPROVED_HASHTAGS = [
     "blockchain",
 ]
 
+# One optional ticker tag when the story is clearly about that entity (4 core + 1 topic).
+TOPIC_HASHTAGS: dict[str, str] = {
+    "ripple": "ripple",
+    "xrp": "ripple",
+    "solana": "solana",
+    " sol ": "solana",
+    "binance": "binance",
+    " bnb": "binance",
+    "coinbase": "coinbase",
+    "cardano": "cardano",
+    " ada": "cardano",
+}
+
 TAG_HINTS = {
     "bitcoin": ("bitcoin", "btc", "blackrock"),
     "btc": ("bitcoin", "btc"),
@@ -75,8 +88,32 @@ def pick_approved_hashtags(text: str, count: int = 5) -> List[str]:
     return picked[:count]
 
 
+def _detect_topic_tag(text: str) -> Optional[str]:
+    blob = f" {(text or '').lower()} "
+    for hint, tag in TOPIC_HASHTAGS.items():
+        if hint in blob:
+            return tag
+    return None
+
+
+def pick_ig_hashtag_tags(text: str, count: int = 5) -> List[str]:
+    """Exactly `count` tags: up to 4 from core pool + 1 topic tag when relevant."""
+    topic = _detect_topic_tag(text)
+    core_slots = count - (1 if topic else 0)
+    core = pick_approved_hashtags(text, core_slots)
+    if topic and topic not in core:
+        return (core + [topic])[:count]
+    return pick_approved_hashtags(text, count)[:count]
+
+
+def fix_hashtag_block(body: str, article_text: str, count: int) -> str:
+    tags = pick_ig_hashtag_tags(article_text, count)
+    tag_line = " ".join(f"#{t}" for t in tags)
+    return f"{body.rstrip()}\n\n{tag_line}".strip()
+
+
 def _tag_line(text: str, count: int) -> str:
-    return " ".join(f"#{tag}" for tag in pick_approved_hashtags(text, count))
+    return " ".join(f"#{t}" for t in pick_ig_hashtag_tags(text, count))
 
 
 def build_caption(

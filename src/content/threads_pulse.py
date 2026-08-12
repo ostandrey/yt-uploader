@@ -78,11 +78,11 @@ def _is_regulatory(article: Dict) -> bool:
 
 def _regulatory_tag(article: Dict) -> str:
     blob = f"{article.get('title', '')} {article.get('summary', '')}".lower()
-    if "sec" in blob:
+    if "sec" in blob or "cftc" in blob or "regulat" in blob:
         return "#sec"
     if "bitcoin" in blob or "btc" in blob:
         return "#bitcoin"
-    return ""
+    return "#crypto"
 
 
 def build_threads_news_pulse(

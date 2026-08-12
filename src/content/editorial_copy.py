@@ -11,21 +11,7 @@ from src.content.copy_writer import chat_json, llm_configured
 from src.content.naturalize import naturalize_text
 from src.content.voice import NEWS_DESK_VOICE
 
-BANNED = (
-    "buy now",
-    "sell now",
-    "100x",
-    "guaranteed",
-    "financial advice",
-    "not financial advice",
-    "pump",
-    "moon",
-    "what do you think",
-    "drop your",
-    "delve",
-    "game changer",
-    "here's what you need to know",
-)
+from src.content.voice import NEWS_DESK_VOICE, copy_contains_banned
 
 
 def _clip(text: str, max_len: int) -> str:
@@ -38,8 +24,7 @@ def _clip(text: str, max_len: int) -> str:
 
 def _clean(text: str, max_len: int) -> str:
     text = _clip(text, max_len)
-    lower = text.lower()
-    if any(bad in lower for bad in BANNED):
+    if copy_contains_banned(text):
         return ""
     return text
 
@@ -71,7 +56,7 @@ def news_flash(article: dict[str, Any]) -> str:
 - First sentence: the single most important fact. Include a number or name if available.
 - Second sentence: one line of context.
 - No CTA to YouTube. No engagement questions. No disclaimer.
-- No hashtags unless regulatory (then one only: #sec or #bitcoin).
+- No hashtags unless regulatory (then one only from #bitcoin #sec #crypto).
 - No em dashes.
 
 Article title: {title}

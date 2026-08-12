@@ -423,7 +423,7 @@ class ShortScriptGenerator:
             sentences.append(_market_impact(context))
 
         # 6. Punchy CTA — one short line (old CTA was almost another news beat)
-        sentences.append("Follow Coin Wire for the next move.")
+        sentences.append("Follow Coin Wire for daily crypto news.")
 
         script = "\n".join(sentences[:5])
         short_title = _short_title(title, moves)
