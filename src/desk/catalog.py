@@ -218,9 +218,18 @@ def load_editorial_items() -> list[dict[str, Any]]:
         done = bool(item.get("done"))
         age_hours = _age_hours(created_at, now)
         is_new = (not done) and age_hours is not None and age_hours < 8
+        kind = str(item.get("kind") or "note")
+        if kind in {"opinion", "question", "recap"}:
+            tab = "threads"
+        elif kind in {"context", "poll", "digest"}:
+            tab = "telegram"
+        else:
+            tab = "threads"
         row = dict(item)
         row.update(
             {
+                "kind": kind,
+                "tab": tab,
                 "is_new": is_new,
                 "badge": "НОВЕ" if is_new else ("ГОТОВО" if done else "РАНІШЕ"),
                 "badge_kind": "new" if is_new else ("done" if done else "old"),
@@ -333,6 +342,42 @@ def resolve_thumb(pack: dict[str, Any]) -> Optional[Path]:
     return None
 
 
+def desk_tabs(pack: dict | None, editorial: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Tab strip: platform filters + new-count badges."""
+    threads_kinds = {"opinion", "question", "recap"}
+    telegram_kinds = {"context", "poll", "digest"}
+    threads_new = sum(
+        1
+        for item in editorial
+        if item.get("is_new") and item.get("kind") in threads_kinds
+    )
+    telegram_new = sum(
+        1
+        for item in editorial
+        if item.get("is_new") and item.get("kind") in telegram_kinds
+    )
+    short_new = 0
+    tiktok_new = 0
+    ig_new = 0
+    if pack:
+        marks = pack.get("marks") or {}
+        if not marks.get("tiktok"):
+            tiktok_new = 1
+            short_new += 1
+        if not marks.get("instagram"):
+            ig_new = 1
+            short_new += 1
+    all_new = short_new + threads_new + telegram_new
+    return [
+        {"id": "all", "label": "Все", "badge": all_new},
+        {"id": "short", "label": "Short", "badge": short_new},
+        {"id": "threads", "label": "Threads", "badge": threads_new},
+        {"id": "telegram", "label": "TG", "badge": telegram_new},
+        {"id": "tiktok", "label": "TikTok", "badge": tiktok_new},
+        {"id": "instagram", "label": "IG", "badge": ig_new},
+    ]
+
+
 def stats_snapshot() -> dict[str, Any]:
     pending: list[Any] = []
     if PENDING_FILE.exists():
@@ -356,6 +401,31 @@ def stats_snapshot() -> dict[str, Any]:
         row = dict(item)
         row["when"] = _short_ts(str(row.get("updated_at") or ""))
         history.append(row)
+
+    editorial = load_editorial_items()
+    editorial_new = sum(1 for item in editorial if item.get("is_new"))
+    editorial_open = sum(1 for item in editorial if not item.get("done"))
+    editorial_done = sum(1 for item in editorial if item.get("done"))
+
+    tg_today = 0
+    tg_state = STORAGE / "telegram_daily_state.json"
+    if tg_state.exists():
+        try:
+            data = json.loads(tg_state.read_text(encoding="utf-8"))
+            tg_today = int(data.get("post_count") or 0)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            tg_today = 0
+
+    from src.paths import storage_status
+
+    storage = storage_status()
+    empty = (
+        counts.get("shorts", 0) == 0
+        and used == 0
+        and not editorial
+        and not pending
+    )
+
     return {
         "shorts_on_desk": counts.get("shorts", 0),
         "posted_tiktok": counts.get("tiktok", 0),
@@ -368,6 +438,39 @@ def stats_snapshot() -> dict[str, Any]:
         "latest_qa": (latest or {}).get("qa_score"),
         "history": history,
         "pending": pending[-8:],
+        "editorial_new": editorial_new,
+        "editorial_open": editorial_open,
+        "editorial_done": editorial_done,
+        "telegram_today": tg_today,
+        "storage_path": storage.get("path") or "",
+        "storage_warn": bool(storage.get("warn_no_volume") or empty and storage.get("railway")),
+        "push_subs": int(storage.get("push_subs") or 0),
+        "platforms_today": [
+            {
+                "id": "telegram",
+                "label": "Telegram канал",
+                "done": tg_today,
+                "target": 8,
+            },
+            {
+                "id": "editorial",
+                "label": "Desk тексти (нові)",
+                "done": editorial_new,
+                "target": max(editorial_open, 1),
+            },
+            {
+                "id": "tiktok",
+                "label": "TikTok ✓",
+                "done": counts.get("tiktok", 0),
+                "target": max(counts.get("shorts", 0), 1),
+            },
+            {
+                "id": "instagram",
+                "label": "IG ✓",
+                "done": counts.get("instagram", 0),
+                "target": max(counts.get("shorts", 0), 1),
+            },
+        ],
     }
 
 

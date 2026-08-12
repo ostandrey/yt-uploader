@@ -215,6 +215,8 @@ def today(request: Request):
     if not _authed(request):
         return RedirectResponse("/login", status_code=303)
     pack = catalog.load_latest()
+    public = _public_pack(pack)
+    editorial = catalog.load_editorial_items()
     return templates.TemplateResponse(
         request,
         "today.html",
@@ -222,9 +224,10 @@ def today(request: Request):
             "request": request,
             "logged_in": True,
             "nav": "today",
-            "pack": _public_pack(pack),
+            "pack": public,
             "has_thumb": bool(pack and catalog.resolve_thumb(pack)),
-            "editorial": catalog.load_editorial_items(),
+            "editorial": editorial,
+            "tabs": catalog.desk_tabs(public, editorial),
             "push_enabled": push.push_configured(),
         },
     )

@@ -315,6 +315,54 @@
   });
   syncDock();
 
+  function setupTabs() {
+    const tabs = Array.from(document.querySelectorAll("[data-tab]"));
+    const panels = Array.from(document.querySelectorAll("[data-panel]"));
+    if (!tabs.length || !panels.length) return;
+
+    function show(tabId) {
+      const allMode = tabId === "all";
+      tabs.forEach((tab) => {
+        tab.classList.toggle("is-active", tab.getAttribute("data-tab") === tabId);
+      });
+      panels.forEach((panel) => {
+        const id = panel.getAttribute("data-panel");
+        const visible = allMode
+          ? id === "short" || id === "threads" || id === "telegram" || id === "tiktok" || id === "instagram"
+          : id === tabId;
+        panel.hidden = !visible;
+      });
+      try {
+        localStorage.setItem("cw-desk-tab", tabId);
+      } catch (err) {
+        /* ignore */
+      }
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => show(tab.getAttribute("data-tab")));
+    });
+
+    let initial = "all";
+    try {
+      initial = localStorage.getItem("cw-desk-tab") || "all";
+    } catch (err) {
+      initial = "all";
+    }
+    if (!tabs.some((tab) => tab.getAttribute("data-tab") === initial)) {
+      initial = "all";
+    }
+    // Prefer first tab with a badge if landing on all and there are new items
+    const hot = tabs.find((tab) => {
+      const id = tab.getAttribute("data-tab");
+      return id !== "all" && tab.querySelector(".desk-tab-badge");
+    });
+    if (initial === "all" && hot) {
+      initial = hot.getAttribute("data-tab");
+    }
+    show(initial);
+  }
+
   function urlBase64ToUint8Array(base64String) {
     const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
     const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -324,26 +372,73 @@
     return output;
   }
 
+  function isIos() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+
   async function setupPush() {
     const btn = document.getElementById("push-btn");
-    if (!btn || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    const hint = document.getElementById("push-hint");
+    if (!btn) return;
+
+    const supportsPush =
+      "serviceWorker" in navigator &&
+      "PushManager" in window &&
+      "Notification" in window;
+
+    if (!supportsPush) {
+      btn.hidden = false;
+      btn.textContent = "Push недоступний";
+      btn.disabled = true;
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = isIos()
+          ? "На iOS потрібен iOS 16.4+ і ярлик з Safari → Share → На екран «Додому»."
+          : "Цей браузер не підтримує Web Push.";
+      }
+      return;
+    }
+
     btn.hidden = false;
     const isStandalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       window.navigator.standalone === true;
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      const existing = await reg.pushManager.getSubscription();
-      btn.textContent = existing
-        ? "Сповіщення ✓"
-        : isStandalone
-          ? "Увімкнути сповіщення"
-          : "Сповіщення (додай на Home)";
-    } catch (err) {
-      btn.textContent = "Сповіщення";
+
+    if (isIos() && !isStandalone && hint) {
+      hint.hidden = false;
+      hint.textContent =
+        "iPhone: відкрий desk з іконки на Home Screen, тоді натисни «Увімкнути сповіщення». З Safari-вкладки push не працює.";
     }
+
+    async function refreshLabel() {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) {
+          btn.textContent = "Тест сповіщення";
+          btn.dataset.mode = "test";
+        } else if (isStandalone) {
+          btn.textContent = "Увімкнути сповіщення";
+          btn.dataset.mode = "subscribe";
+        } else {
+          btn.textContent = isIos() ? "Сповіщення (з Home)" : "Увімкнути сповіщення";
+          btn.dataset.mode = "subscribe";
+        }
+      } catch (err) {
+        btn.textContent = "Сповіщення";
+        btn.dataset.mode = "subscribe";
+      }
+    }
+
+    await refreshLabel();
+
     btn.addEventListener("click", async () => {
       try {
+        if (isIos() && !isStandalone) {
+          toast("Спочатку відкрий desk з Home Screen", false);
+          return;
+        }
         const perm = await Notification.requestPermission();
         if (perm !== "granted") {
           toast("Дозвіл на сповіщення відхилено", false);
@@ -353,13 +448,19 @@
         if (!keyRes.ok) throw new Error("key");
         const { publicKey } = await keyRes.json();
         const reg = await navigator.serviceWorker.ready;
-        let sub = await reg.pushManager.getSubscription();
-        if (!sub) {
-          sub = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(publicKey),
-          });
+        // Always resubscribe with current VAPID — old keys die after redeploy without volume
+        const old = await reg.pushManager.getSubscription();
+        if (old) {
+          try {
+            await old.unsubscribe();
+          } catch (err) {
+            /* continue */
+          }
         }
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
         const res = await fetch("/api/push/subscribe", {
           method: "POST",
           credentials: "same-origin",
@@ -367,23 +468,28 @@
           body: JSON.stringify(sub.toJSON()),
         });
         if (!res.ok) throw new Error("subscribe");
-        btn.textContent = "Сповіщення ✓";
         const testRes = await fetch("/api/push/test", {
           method: "POST",
           credentials: "same-origin",
         });
         const testBody = testRes.ok ? await testRes.json() : {};
+        await refreshLabel();
         if (testRes.ok && (testBody.sent || 0) > 0) {
-          toast("Тест-пуш надіслано — перевір телефон/ноут");
+          toast("Тест-пуш надіслано");
         } else {
-          toast("Підписка збережена, але тест-пуш не пішов", false);
+          toast(
+            "Підписка є, але сервер не зміг надіслати (перевір volume / pywebpush)",
+            false
+          );
         }
       } catch (err) {
+        console.error(err);
         toast("Не вдалось увімкнути сповіщення", false);
       }
     });
   }
 
+  setupTabs();
   setupPush();
 })();
 

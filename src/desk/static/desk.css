@@ -18,6 +18,7 @@
   --radius-btn: 10px;
   --radius-badge: 6px;
   --max: 430px;
+  --max-desktop: 720px;
 
   --pico-font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --pico-font-size: 16px;
@@ -92,6 +93,125 @@ body::-webkit-scrollbar { width: 0; height: 0; }
     calc(20px + env(safe-area-inset-right, 0px))
     calc(16px + env(safe-area-inset-bottom, 0px))
     calc(20px + env(safe-area-inset-left, 0px));
+}
+
+@media (min-width: 768px) {
+  .page-wrap {
+    max-width: var(--max-desktop);
+  }
+}
+
+.desk-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  margin-bottom: 8px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.desk-tabs::-webkit-scrollbar { display: none; }
+
+.desk-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--inset);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.desk-tab.is-active {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.desk-tab-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.desk-tab.is-active .desk-tab-badge {
+  background: var(--accent-ink);
+  color: var(--accent);
+}
+
+.tab-panel[hidden] { display: none !important; }
+
+.push-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--warn);
+  font-size: 13px;
+}
+
+.warn-banner {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.warn-banner code {
+  color: #fff;
+  font-size: 12px;
+}
+
+.progress-list {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.progress-row {
+  display: grid;
+  gap: 6px;
+}
+
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--inset);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.progress-track > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
 }
 
 h1, h2, h3, p, ul { margin: 0; }

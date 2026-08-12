@@ -13,10 +13,30 @@
   </header>
 
   <main>
+    {% if snap.storage_warn %}
+    <div class="warn-banner">
+      Дані порожні — на Railway змонтуй volume <code>/app/data</code>. Без нього історія, Shorts і push-підписки згорають після деплою.
+    </div>
+    {% endif %}
+
+    <h3 class="section-title">Сьогодні / черга</h3>
+    <div class="progress-list">
+      {% for row in snap.platforms_today %}
+      {% set pct = ((row.done / row.target) * 100) if row.target else 0 %}
+      <div class="progress-row">
+        <div class="progress-head">
+          <span>{{ row.label }}</span>
+          <span>{{ row.done }}/{{ row.target }}</span>
+        </div>
+        <div class="progress-track"><span style="width: {% if pct > 100 %}100{% else %}{{ pct|round(0) }}{% endif %}%"></span></div>
+      </div>
+      {% endfor %}
+    </div>
+
     <div class="stats-grid">
       <div class="stat-card">
         <b>{{ snap.shorts_on_desk }}</b>
-        <span>Shorts</span>
+        <span>Shorts у SQLite</span>
       </div>
       <div class="stat-card">
         <b>{{ snap.pending_youtube }}</b>
@@ -31,16 +51,25 @@
         <span>IG ✓</span>
       </div>
       <div class="stat-card">
-        <b class="stat-ok">{{ snap.posted_threads }}</b>
-        <span>Threads ✓</span>
+        <b>{{ snap.editorial_new }}</b>
+        <span>Desk нові тексти</span>
+      </div>
+      <div class="stat-card">
+        <b>{{ snap.telegram_today }}</b>
+        <span>TG сьогодні</span>
       </div>
       <div class="stat-card">
         <b>{{ snap.articles_used }}</b>
         <span>Статті used</span>
       </div>
+      <div class="stat-card">
+        <b>{{ snap.push_subs }}</b>
+        <span>Push підписки</span>
+      </div>
     </div>
 
-    <p class="muted">Останній: {{ snap.latest_title or "—" }}{% if snap.latest_at %} · {{ snap.latest_at }}{% endif %}</p>
+    <p class="muted">Останній Short: {{ snap.latest_title or "—" }}{% if snap.latest_at %} · {{ snap.latest_at }}{% endif %}</p>
+    <p class="muted">Desk тексти: {{ snap.editorial_open }} відкритих · {{ snap.editorial_done }} готових</p>
 
     <h3 class="section-title">Ролики</h3>
     {% if snap.history %}
@@ -60,7 +89,7 @@
       {% endfor %}
     </div>
     {% else %}
-    <p class="muted">Поки порожньо.</p>
+    <p class="muted">Поки порожньо — з’явиться після першого Short на volume.</p>
     {% endif %}
 
     <h3 class="section-title">YouTube черга</h3>
@@ -78,7 +107,7 @@
     {% else %}
     <p class="muted">Немає черги.</p>
     {% endif %}
-    <p class="hint">Це журнал з телефону + volume воркера. Перегляди YouTube сюди самі не підтягуються.</p>
+    <p class="hint">Журнал з volume воркера. Перегляди YouTube сюди не підтягуються.</p>
   </main>
 </div>
 {% endblock %}

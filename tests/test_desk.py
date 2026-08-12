@@ -40,12 +40,18 @@ def test_editorial_new_vs_old_badges(tmp_path, monkeypatch):
     by_id = {item["id"]: item for item in items}
     assert by_id["new-1"]["badge"] == "НОВЕ"
     assert by_id["new-1"]["badge_kind"] == "new"
+    assert by_id["new-1"]["tab"] == "threads"
     assert by_id["old-1"]["badge"] == "РАНІШЕ"
     assert by_id["done-1"]["badge"] == "ГОТОВО"
+    assert by_id["done-1"]["tab"] == "telegram"
     assert items[0]["id"] == "new-1"
     marked = catalog.set_editorial_done("new-1", True)
     assert marked["done"] is True
     assert marked["badge"] == "ГОТОВО"
+    tabs = catalog.desk_tabs(None, catalog.load_editorial_items())
+    by_tab = {t["id"]: t["badge"] for t in tabs}
+    assert by_tab["telegram"] == 0  # done, not new
+    assert "threads" in by_tab
 
 
 def test_session_roundtrip(monkeypatch):
