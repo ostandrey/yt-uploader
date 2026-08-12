@@ -62,6 +62,17 @@ def _push_desk_item(kind: str, label: str, text: str) -> None:
     items = load_editorial_items()
     items.insert(0, {"kind": kind, "label": label, "text": text})
     write_editorial_items(items)
+    try:
+        from src.desk.push import notify_desk_push
+        from src.publishers.owner_notify import format_desk_editorial_ready
+
+        notify_desk_push(
+            "Desk ready",
+            format_desk_editorial_ready(kind=kind),
+            url="/",
+        )
+    except Exception as exc:
+        print(f"Desk push (editorial) failed: {exc}")
 
 
 def after_telegram_post(
