@@ -80,8 +80,11 @@ def _ensure_vapid() -> dict[str, str]:
         except Exception as exc:
             log.warning("VAPID generate failed: %s", exc)
             return {}
-        STORAGE.mkdir(parents=True, exist_ok=True)
-        VAPID_FILE.write_text(json.dumps(keys, indent=2), encoding="utf-8")
+        try:
+            STORAGE.mkdir(parents=True, exist_ok=True)
+            VAPID_FILE.write_text(json.dumps(keys, indent=2), encoding="utf-8")
+        except OSError as exc:
+            log.warning("VAPID persist failed (keys still in memory this process): %s", exc)
         return keys
 
 

@@ -5,15 +5,30 @@
   <header class="desk-header">
     <span class="brand">Coin Wire</span>
     <div class="header-actions">
-      {% if push_enabled %}
-      <button type="button" class="btn-ghost btn-compact" id="push-btn" hidden>Сповіщення</button>
-      {% endif %}
+      <button type="button" class="btn-ghost btn-compact" id="refresh-btn" title="Оновити">Оновити</button>
       <a class="btn-ghost btn-compact" href="/stats">Статистика</a>
       <form method="post" action="/logout">
         <button class="btn-ghost btn-compact" type="submit">Вийти</button>
       </form>
     </div>
   </header>
+
+  <section class="push-card card" id="push-card">
+    <div class="push-card-copy">
+      <h2>Сповіщення</h2>
+      <p id="push-status-text">
+        {% if push_enabled %}
+        Увімкни, щоб телефон/ПК отримували короткий ping, коли Short або текст готові.
+        {% else %}
+        Push на сервері ще не готовий (немає VAPID). Після deploy з <code>pywebpush</code> і volume <code>/app/data</code> з’явиться кнопка.
+        {% endif %}
+      </p>
+    </div>
+    <button type="button" class="btn-primary" id="push-btn" {% if not push_enabled %}disabled{% endif %}>
+      {% if push_enabled %}Увімкнути сповіщення{% else %}Push недоступний{% endif %}
+    </button>
+  </section>
+  <p id="push-hint" class="push-hint" hidden></p>
 
   <nav class="desk-tabs" id="desk-tabs" aria-label="Платформи">
     {% for tab in tabs %}
@@ -25,7 +40,6 @@
     </button>
     {% endfor %}
   </nav>
-  <p id="push-hint" class="push-hint" hidden></p>
 
   <main class="desk-main">
     <textarea id="clip-fallback" class="clip-fallback" aria-hidden="true" readonly></textarea>

@@ -5,6 +5,7 @@
   <header class="desk-header">
     <span class="brand">Coin Wire</span>
     <div class="header-actions">
+      <button type="button" class="btn-ghost btn-compact" id="refresh-btn" title="Оновити">Оновити</button>
       <a class="btn-ghost btn-compact" href="/">← Сьогодні</a>
       <form method="post" action="/logout">
         <button class="btn-ghost btn-compact" type="submit">Вийти</button>
@@ -110,4 +111,18 @@
     <p class="hint">Журнал з volume воркера. Перегляди YouTube сюди не підтягуються.</p>
   </main>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const refreshBtn = document.getElementById("refresh-btn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", () => {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = "…";
+      const url = new URL(window.location.href);
+      url.searchParams.set("r", String(Date.now()));
+      window.location.replace(url.toString());
+    });
+  }
+</script>
 {% endblock %}

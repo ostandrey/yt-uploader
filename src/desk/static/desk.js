@@ -19,6 +19,17 @@
     window.navigator.standalone === true;
   if (!standalone && pwaHint) pwaHint.hidden = false;
 
+  const refreshBtn = document.getElementById("refresh-btn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", () => {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = "…";
+      const url = new URL(window.location.href);
+      url.searchParams.set("r", String(Date.now()));
+      window.location.replace(url.toString());
+    });
+  }
+
   function toast(msg, ok = true) {
     if (!toastEl) return;
     toastEl.textContent = msg;
@@ -380,27 +391,35 @@
   async function setupPush() {
     const btn = document.getElementById("push-btn");
     const hint = document.getElementById("push-hint");
+    const statusText = document.getElementById("push-status-text");
+    const card = document.getElementById("push-card");
     if (!btn) return;
 
+    const serverReady = !btn.disabled;
     const supportsPush =
       "serviceWorker" in navigator &&
       "PushManager" in window &&
       "Notification" in window;
 
-    if (!supportsPush) {
-      btn.hidden = false;
-      btn.textContent = "Push недоступний";
-      btn.disabled = true;
-      if (hint) {
-        hint.hidden = false;
-        hint.textContent = isIos()
-          ? "На iOS потрібен iOS 16.4+ і ярлик з Safari → Share → На екран «Додому»."
-          : "Цей браузер не підтримує Web Push.";
+    if (!serverReady) {
+      if (statusText) {
+        statusText.textContent =
+          "Сервер ще не вміє слати push (немає VAPID / pywebpush). Після deploy кнопка стане активною.";
       }
       return;
     }
 
-    btn.hidden = false;
+    if (!supportsPush) {
+      btn.disabled = true;
+      btn.textContent = "Push недоступний тут";
+      if (statusText) {
+        statusText.textContent = isIos()
+          ? "На iOS потрібен 16.4+ і ярлик з Safari → Поділитися → На екран «Додому»."
+          : "Цей браузер не підтримує Web Push. Спробуй Chrome / Edge.";
+      }
+      return;
+    }
+
     const isStandalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       window.navigator.standalone === true;
@@ -408,7 +427,7 @@
     if (isIos() && !isStandalone && hint) {
       hint.hidden = false;
       hint.textContent =
-        "iPhone: відкрий desk з іконки на Home Screen, тоді натисни «Увімкнути сповіщення». З Safari-вкладки push не працює.";
+        "iPhone: відкрий desk з іконки Home Screen. З вкладки Safari система push не дає.";
     }
 
     async function refreshLabel() {
@@ -416,17 +435,23 @@
         const reg = await navigator.serviceWorker.ready;
         const existing = await reg.pushManager.getSubscription();
         if (existing) {
-          btn.textContent = "Тест сповіщення";
+          btn.textContent = "Надіслати тест";
           btn.dataset.mode = "test";
-        } else if (isStandalone) {
+          if (card) card.classList.add("is-on");
+          if (statusText) {
+            statusText.textContent = "Сповіщення увімкнені. Натисни тест — має прийти ping.";
+          }
+        } else {
           btn.textContent = "Увімкнути сповіщення";
           btn.dataset.mode = "subscribe";
-        } else {
-          btn.textContent = isIos() ? "Сповіщення (з Home)" : "Увімкнути сповіщення";
-          btn.dataset.mode = "subscribe";
+          if (card) card.classList.remove("is-on");
+          if (statusText) {
+            statusText.textContent =
+              "Натисни кнопку → Allow у браузері. Після цього приходитимуть короткі ping-и.";
+          }
         }
       } catch (err) {
-        btn.textContent = "Сповіщення";
+        btn.textContent = "Увімкнути сповіщення";
         btn.dataset.mode = "subscribe";
       }
     }
@@ -442,13 +467,16 @@
         const perm = await Notification.requestPermission();
         if (perm !== "granted") {
           toast("Дозвіл на сповіщення відхилено", false);
+          if (statusText) {
+            statusText.textContent =
+              "Браузер заблокував сповіщення. Увімкни їх у налаштуваннях сайту і натисни знову.";
+          }
           return;
         }
         const keyRes = await fetch("/api/push/public-key", { credentials: "same-origin" });
         if (!keyRes.ok) throw new Error("key");
         const { publicKey } = await keyRes.json();
         const reg = await navigator.serviceWorker.ready;
-        // Always resubscribe with current VAPID — old keys die after redeploy without volume
         const old = await reg.pushManager.getSubscription();
         if (old) {
           try {
