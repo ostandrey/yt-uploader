@@ -155,13 +155,20 @@ def publish_due_shorts(*, dry_run: bool = False) -> List[Dict[str, Any]]:
         results.append({"video_id": video_id, "title": title, "url": url})
 
         try:
-            from src.publishers.telegram_publisher import control_keyboard
+            from src.publishers.owner_notify import format_youtube_status, notify_owner_status
 
-            TelegramPublisher().notify_owner(
-                "Coin Wire Short is now PUBLIC (auto-publish):\n"
-                f"{url}\n\n"
-                f"Title: {title}",
-                buttons=control_keyboard(),
+            head = (title or "").strip()
+            if len(head) > 48:
+                head = head[:47].rstrip() + "…"
+            notify_owner_status(
+                TelegramPublisher(),
+                [
+                    format_youtube_status(
+                        state="public",
+                        url=url,
+                        publish_hint=head or "auto-publish",
+                    )
+                ],
             )
         except Exception:
             pass

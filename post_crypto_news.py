@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -109,14 +110,37 @@ def main() -> None:
                 print(f"Editorial queued: {', '.join(editorial['queued'])}")
 
             if not args.dry_run:
-                from src.publishers.telegram_publisher import control_keyboard
-
-                publisher.notify_owner(
-                    f"Coin Wire TG: {result['tier']} post ({result['score']})\n"
-                    f"{result['title'][:80]}\n"
-                    f"Today: {result['post_count']}/day",
-                    buttons=control_keyboard(),
+                from src.publishers.owner_notify import (
+                    format_desk_editorial_ready,
+                    format_tg_channel_status,
+                    format_threads_pulse_posted,
+                    notify_owner_status,
                 )
+
+                max_posts = int(
+                    config.get("publishing", {}).get("telegram", {}).get("max_posts_per_day", 8)
+                )
+                lines = [
+                    format_tg_channel_status(
+                        tier=str(result.get("tier") or ""),
+                        title=str(result.get("title") or ""),
+                        score=int(result.get("score") or 0),
+                        post_count=int(result.get("post_count") or 0),
+                        max_posts=max_posts,
+                    )
+                ]
+                if pulse.get("posted"):
+                    lines.append(
+                        format_threads_pulse_posted(
+                            variant=str(pulse.get("variant") or ""),
+                            url=str(pulse.get("url") or ""),
+                        )
+                    )
+                story_title = str(result.get("title") or "")
+                for kind in editorial.get("queued") or []:
+                    lines.append(format_desk_editorial_ready(kind=kind, title=story_title))
+                desk_url = os.getenv("DESK_PUBLIC_URL", "").strip()
+                notify_owner_status(publisher, lines, desk_url=desk_url)
         else:
             print(
                 f"No post ({result['reason']}) — today {result['post_count']}, "
@@ -158,11 +182,17 @@ def main() -> None:
         print("Posted to Telegram channel.")
 
     if not args.dry_run:
-        from src.publishers.telegram_publisher import control_keyboard
+        from src.publishers.owner_notify import format_tg_channel_status, notify_owner_status
 
-        publisher.notify_owner(
-            f"Coin Wire: posted {len(articles)} crypto news update(s) to the channel.",
-            buttons=control_keyboard(),
+        notify_owner_status(
+            publisher,
+            [format_tg_channel_status(
+                tier="News",
+                title=f"batch · {len(articles)} posts",
+                score=0,
+                post_count=len(articles),
+                max_posts=len(articles),
+            )],
         )
 
 

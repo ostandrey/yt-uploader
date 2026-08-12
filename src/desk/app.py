@@ -11,11 +11,11 @@ from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.content.copy_guard import display_title, safe_caption
-from src.desk import auth, catalog, db
+from src.desk import auth, catalog, db, push
 
 DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(DIR / "templates"))
@@ -37,6 +37,12 @@ class MarkBody(BaseModel):
     id: int
     platform: str
     posted: bool = True
+
+
+class PushSubBody(BaseModel):
+    endpoint: str
+    keys: dict = Field(default_factory=dict)
+    expirationTime: int | float | None = None
 
 
 class SecurityHeaders(BaseHTTPMiddleware):
@@ -119,6 +125,16 @@ def _public_pack(pack: dict | None) -> dict | None:
     }
 
 
+@app.get("/sw.js")
+def service_worker():
+    path = DIR / "static" / "sw.js"
+    return FileResponse(
+        path,
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+    )
+
+
 @app.get("/health")
 def health():
     return {"ok": True, "desk": auth.enabled()}
@@ -197,6 +213,7 @@ def today(request: Request):
             "pack": _public_pack(pack),
             "has_thumb": bool(pack and catalog.resolve_thumb(pack)),
             "editorial": catalog.load_editorial_items(),
+            "push_enabled": push.push_configured(),
         },
     )
 
@@ -285,6 +302,32 @@ def media_thumb(request: Request):
     if not path:
         raise HTTPException(404, "no thumb")
     return FileResponse(path, media_type="image/jpeg")
+
+
+@app.get("/api/push/public-key")
+def api_push_public_key(request: Request):
+    if not _authed(request):
+        raise HTTPException(401, "auth required")
+    key = push.public_key()
+    if not key:
+        raise HTTPException(503, "push unavailable")
+    return JSONResponse({"publicKey": key})
+
+
+@app.post("/api/push/subscribe")
+def api_push_subscribe(request: Request, body: PushSubBody):
+    if not _authed(request):
+        raise HTTPException(401, "auth required")
+    if not push.push_configured():
+        raise HTTPException(503, "push unavailable")
+    push.save_subscription(
+        {
+            "endpoint": body.endpoint,
+            "keys": body.keys,
+            "expirationTime": body.expirationTime,
+        }
+    )
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/mark")

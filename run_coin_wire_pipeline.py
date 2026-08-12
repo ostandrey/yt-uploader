@@ -43,9 +43,14 @@ from src.publishers.captions import phone_copy_packs
 from src.publishers.crosspost import format_crosspost_summary, run_crosspost
 from src.publishers.telegram_publisher import TelegramPublisher, control_keyboard
 from src.publishers.youtube_publisher import YouTubePublisher
-from src.desk.catalog import write_desk_pack
+from src.desk.catalog import list_carousel_slides, write_desk_pack
 from src.media.instagram_feed_image import create_instagram_feed_assets
 from src.media.shorts_qa import review_short
+from src.publishers.owner_notify import (
+    format_short_status_bundle,
+    notify_owner_status,
+    owner_full_kit_enabled,
+)
 
 VIDEOS_DIR = ROOT / "data" / "storage" / "coin_wire" / "videos"
 USED_SHORTS_FILE = ROOT / "data" / "storage" / "coin_wire" / "used_short_articles.json"
@@ -151,6 +156,55 @@ def _publish_desk_pack(
 
 def _desk_public_url() -> str:
     return os.getenv("DESK_PUBLIC_URL", "").strip().rstrip("/")
+
+
+def _notify_short_ready(
+    tg: TelegramPublisher,
+    *,
+    content: dict,
+    youtube_url: str = "",
+    qa_score: Optional[int] = None,
+    pending_entry: Optional[dict] = None,
+    delay_minutes: int = 30,
+    video_path: Optional[Path] = None,
+    work_dir: Optional[Path] = None,
+    thumbnail_path: Optional[Path] = None,
+    buttons=None,
+) -> None:
+    desk_url = _desk_public_url()
+    carousel_slides = len(list_carousel_slides())
+    pending_entry = pending_entry or {}
+    publish_hint = ""
+    youtube_state = "skip"
+    if youtube_url:
+        youtube_state = "unlisted"
+        if pending_entry.get("status") == "scheduled":
+            publish_at = str(pending_entry.get("publish_at", ""))[:16].replace("T", " ")
+            publish_hint = f"public ~{delay_minutes}m ({publish_at} UTC)"
+        else:
+            publish_hint = "review in Studio"
+
+    status = format_short_status_bundle(
+        title=content["title"],
+        desk_url=desk_url,
+        qa_score=qa_score,
+        youtube_url=youtube_url,
+        youtube_state=youtube_state,
+        publish_hint=publish_hint,
+        carousel_slides=carousel_slides,
+    )
+    notify_owner_status(tg, [status], buttons=buttons)
+
+    if owner_full_kit_enabled() and video_path and work_dir:
+        _send_phone_kit(
+            tg,
+            video_path=video_path,
+            work_dir=work_dir,
+            content=content,
+            youtube_url=youtube_url,
+            thumbnail_path=thumbnail_path,
+            buttons=buttons,
+        )
 
 
 def _save_pending(video_id: str, title: str, *, config: dict) -> dict:
@@ -298,19 +352,13 @@ def run_pipeline(
         _publish_desk_pack(content, video_path, work_dir)
         try:
             tg = TelegramPublisher()
-            _send_phone_kit(
+            _notify_short_ready(
                 tg,
+                content=content,
+                qa_score=None,
                 video_path=video_path,
                 work_dir=work_dir,
-                content=content,
                 thumbnail_path=thumb_path if thumb_path.exists() else None,
-                buttons=control_keyboard(),
-            )
-            tg.notify_owner(
-                "Coin Wire Short rendered (upload skipped).\n\n"
-                f"Title: {content['title']}\n"
-                f"File: {video_path.name}\n"
-                "(Full path is only on the machine that ran the pipeline — check the console.)",
                 buttons=control_keyboard(),
             )
         except Exception as exc:
@@ -380,12 +428,8 @@ def run_pipeline(
                 )
                 try:
                     TelegramPublisher().notify_owner(
-                        "Coin Wire: YouTube OAuth expired (invalid_grant).\n"
-                        "Video rendered but NOT uploaded.\n\n"
-                        f"File: {video_path.name}\n"
-                        "Fix locally: python setup_youtube_oauth.py --force\n"
-                        "Then paste new tokens/coin_wire_token.json into "
-                        "Railway YOUTUBE_CRYPTO_TOKEN_JSON.",
+                        "📺 YouTube · OAuth expired · Short on desk only\n"
+                        "Fix: setup_youtube_oauth.py --force",
                         buttons=control_keyboard(),
                     )
                 except Exception:
@@ -450,51 +494,18 @@ def run_pipeline(
 
     try:
         tg = TelegramPublisher()
-        lines = [f"Title: {content['title']}"]
-        if youtube_url:
-            if pending_entry.get("status") == "scheduled":
-                publish_at = pending_entry.get("publish_at", "")[:16].replace("T", " ")
-                lines.insert(
-                    0,
-                    "Coin Wire Short uploaded (UNLISTED, auto-publish scheduled):",
-                )
-                lines.append(youtube_url)
-                lines.append(
-                    f"Goes PUBLIC ~{delay} min after upload (~{publish_at} UTC)"
-                )
-                lines.append(f"Studio: {studio}")
-            else:
-                lines.insert(0, "Coin Wire Short ready for review (UNLISTED):")
-                lines.append(youtube_url)
-                lines.append(f"Studio: {studio}")
-        else:
-            lines.insert(0, "Coin Wire Short rendered (YouTube not configured):")
-            lines.append(f"File: {video_path.name}")
-            lines.append("(Path is on the render host — see console / Railway logs.)")
-        lines.append("")
-        lines.append(format_crosspost_summary(crosspost))
-        if qa_text:
-            lines.append("")
-            lines.append(qa_text)
-        lines.append("")
-        lines.append(
-            "Phone: video above. IG carousel + captions: desk site."
-        )
-        desk_url = _desk_public_url()
-        if desk_url:
-            lines.append(f"Desk: {desk_url}/")
         buttons = control_keyboard(video_id or None)
-        _send_phone_kit(
+        qa_score = (result.get("shorts_qa") or {}).get("score")
+        _notify_short_ready(
             tg,
-            video_path=video_path,
-            work_dir=work_dir,
             content=content,
             youtube_url=youtube_url,
+            qa_score=qa_score,
+            pending_entry=pending_entry,
+            delay_minutes=delay,
+            video_path=video_path,
+            work_dir=work_dir,
             thumbnail_path=thumb_path if thumb_path.exists() else None,
-            buttons=buttons,
-        )
-        tg.notify_owner(
-            "\n".join(lines),
             buttons=buttons,
         )
     except Exception as exc:

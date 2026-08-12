@@ -50,6 +50,16 @@ def write_desk_pack(
     sync_carousel(work_dir)
     saved = db.upsert_short(pack)
     pack.update(saved)
+    try:
+        from src.desk.push import notify_desk_push
+
+        notify_desk_push(
+            "Short ready",
+            "TikTok · IG Reel · carousel on desk",
+            url="/",
+        )
+    except Exception as exc:
+        print(f"Desk push notify failed: {exc}")
     return pack
 
 

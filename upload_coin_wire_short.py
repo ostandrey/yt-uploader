@@ -119,10 +119,12 @@ def main() -> None:
         url = YouTubePublisher.short_url(video_id)
         print(f"Done: {url}")
         try:
+            from src.publishers.owner_notify import format_youtube_status, notify_owner_status
             from src.publishers.telegram_publisher import control_keyboard
 
-            TelegramPublisher().notify_owner(
-                f"Coin Wire Short is now PUBLIC:\n{url}",
+            notify_owner_status(
+                TelegramPublisher(),
+                [format_youtube_status(state="public", url=url)],
                 buttons=control_keyboard(),
             )
         except Exception as exc:
@@ -180,20 +182,28 @@ def main() -> None:
     _save_pending(video_id, title, privacy)
 
     try:
+        from src.publishers.owner_notify import format_youtube_status, notify_owner_status
         from src.publishers.telegram_publisher import control_keyboard
 
         tg = TelegramPublisher()
+        buttons = control_keyboard() if privacy == "public" else control_keyboard(video_id)
         if privacy == "public":
-            tg.notify_owner(
-                f"Coin Wire Short uploaded (PUBLIC):\n{url}",
-                buttons=control_keyboard(),
+            notify_owner_status(
+                tg,
+                [format_youtube_status(state="public", url=url)],
+                buttons=buttons,
             )
         else:
-            tg.notify_owner(
-                "Coin Wire Short ready for review (UNLISTED):\n"
-                f"{url}\n\n"
-                f"Studio: {studio}",
-                buttons=control_keyboard(video_id),
+            notify_owner_status(
+                tg,
+                [
+                    format_youtube_status(
+                        state="unlisted",
+                        url=url,
+                        publish_hint="review in Studio",
+                    )
+                ],
+                buttons=buttons,
             )
         print("Telegram notification sent.")
     except Exception as exc:

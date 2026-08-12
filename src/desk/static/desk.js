@@ -284,4 +284,67 @@
     });
   });
   syncDock();
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(base64);
+    const output = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i += 1) output[i] = raw.charCodeAt(i);
+    return output;
+  }
+
+  async function setupPush() {
+    const btn = document.getElementById("push-btn");
+    if (!btn || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    btn.hidden = false;
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.navigator.standalone === true;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      btn.textContent = existing
+        ? "Сповіщення ✓"
+        : isStandalone
+          ? "Увімкнути сповіщення"
+          : "Сповіщення (додай на Home)";
+    } catch (err) {
+      btn.textContent = "Сповіщення";
+    }
+    btn.addEventListener("click", async () => {
+      try {
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") {
+          toast("Дозвіл на сповіщення відхилено", false);
+          return;
+        }
+        const keyRes = await fetch("/api/push/public-key", { credentials: "same-origin" });
+        if (!keyRes.ok) throw new Error("key");
+        const { publicKey } = await keyRes.json();
+        const reg = await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(publicKey),
+          });
+        }
+        const res = await fetch("/api/push/subscribe", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sub.toJSON()),
+        });
+        if (!res.ok) throw new Error("subscribe");
+        btn.textContent = "Сповіщення ✓";
+        toast("Сповіщення увімкнено");
+      } catch (err) {
+        toast("Не вдалось увімкнути сповіщення", false);
+      }
+    });
+  }
+
+  setupPush();
 })();
+

@@ -64,16 +64,6 @@ def _push_desk_item(kind: str, label: str, text: str) -> None:
     write_editorial_items(items)
 
 
-def _notify_copy(publisher: TelegramPublisher, hint: str, body: str) -> None:
-    body = (body or "").strip()
-    if not body:
-        return
-    try:
-        publisher.send_owner_copy_packs([(hint, body)])
-    except Exception as exc:
-        print(f"Editorial owner notify failed: {exc}")
-
-
 def after_telegram_post(
     article: dict[str, Any],
     tier: str,
@@ -103,7 +93,6 @@ def after_telegram_post(
         text = editorial_copy.telegram_context(article)
         if text:
             _push_desk_item("context", "Telegram — контекст", text)
-            _notify_copy(publisher, "Telegram context — long-press NEXT → Copy", text)
             state["context"] = int(state.get("context", 0)) + 1
             queued.append("context")
 
@@ -115,14 +104,12 @@ def after_telegram_post(
         text = editorial_copy.opinion_hook(article)
         if text:
             _push_desk_item("opinion", "Threads — opinion hook", text)
-            _notify_copy(publisher, "Threads opinion — long-press NEXT → Copy", text)
             state["opinion"] = int(state.get("opinion", 0)) + 1
             queued.append("opinion")
     elif state.get("question", 0) < question_cap and tier in {"strong", "breaking", "insight"}:
         text = editorial_copy.question_post(article)
         if text:
             _push_desk_item("question", "Threads — питання", text)
-            _notify_copy(publisher, "Threads question — long-press NEXT → Copy", text)
             state["question"] = int(state.get("question", 0)) + 1
             queued.append("question")
 
@@ -151,6 +138,12 @@ def post_weekly_digest(
     state["digest"] = 1
     _save_state(state)
     append_event(kind="digest", title="Weekly digest")
+    try:
+        from src.publishers.owner_notify import format_tg_digest_status, notify_owner_status
+
+        notify_owner_status(publisher, [format_tg_digest_status()])
+    except Exception as exc:
+        print(f"Editorial owner notify failed: {exc}")
     return {"posted": True, "text": text}
 
 
@@ -170,7 +163,6 @@ def post_threads_recap(
     if not text:
         return {"posted": False, "reason": "no_events"}
     _push_desk_item("recap", "Threads — weekly recap", text)
-    _notify_copy(publisher, "Threads weekly recap — long-press NEXT → Copy", text)
     threads = ThreadsPublisher()
     posted = False
     url = ""
@@ -185,6 +177,19 @@ def post_threads_recap(
         state["recap"] = 1
         _save_state(state)
         append_event(kind="recap", title="Threads weekly recap")
+        try:
+            from src.publishers.owner_notify import (
+                format_desk_editorial_ready,
+                format_threads_pulse_posted,
+                notify_owner_status,
+            )
+
+            lines = [format_desk_editorial_ready(kind="recap", title="Weekly recap")]
+            if posted:
+                lines.append(format_threads_pulse_posted(variant="weekly recap", url=url))
+            notify_owner_status(publisher, lines)
+        except Exception as exc:
+            print(f"Editorial owner notify failed: {exc}")
     return {"posted": posted, "text": text, "url": url, "dry_run": dry_run}
 
 
@@ -217,4 +222,13 @@ def post_telegram_poll(
     state["poll"] = int(state.get("poll", 0)) + 1
     _save_state(state)
     append_event(kind="poll", title=poll["question"])
+    try:
+        from src.publishers.owner_notify import format_tg_poll_status, notify_owner_status
+
+        notify_owner_status(
+            publisher,
+            [format_tg_poll_status(question=poll["question"])],
+        )
+    except Exception as exc:
+        print(f"Editorial owner notify failed: {exc}")
     return {"posted": True, **poll}
