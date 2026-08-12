@@ -137,7 +137,14 @@ def service_worker():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "desk": auth.enabled()}
+    from src.paths import storage_status
+
+    status = storage_status()
+    return {
+        "ok": True,
+        "desk": auth.enabled(),
+        "storage": status,
+    }
 
 
 @app.get("/login")

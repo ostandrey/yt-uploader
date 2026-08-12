@@ -10,10 +10,12 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from src.paths import coin_wire_storage
+
 log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[2]
-STORAGE = ROOT / "data" / "storage" / "coin_wire"
+STORAGE = coin_wire_storage()
 VAPID_FILE = STORAGE / "desk_vapid.json"
 SUBS_FILE = STORAGE / "desk_push_subs.json"
 

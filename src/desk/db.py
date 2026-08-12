@@ -9,8 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from src.paths import coin_wire_storage
+
 ROOT = Path(__file__).resolve().parents[2]
-STORAGE = ROOT / "data" / "storage" / "coin_wire"
+STORAGE = coin_wire_storage()
 PLATFORMS = ("tiktok", "instagram", "threads")
 
 _lock = threading.RLock()

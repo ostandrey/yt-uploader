@@ -12,9 +12,11 @@ import shutil
 import time
 from pathlib import Path
 
+from src.paths import coin_wire_storage
+
 log = logging.getLogger(__name__)
 
-COIN_WIRE_ROOT = Path(__file__).resolve().parents[1] / "data" / "storage" / "coin_wire"
+COIN_WIRE_ROOT = coin_wire_storage()
 VIDEOS_DIR = COIN_WIRE_ROOT / "videos"
 RENDERS_DIR = COIN_WIRE_ROOT / "renders"
 

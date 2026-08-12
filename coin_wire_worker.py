@@ -157,6 +157,23 @@ def _preflight() -> None:
     if not pexels and not pixabay:
         log.warning("No PEXELS_API_KEY or PIXABAY_API_KEY — stock footage may be limited")
 
+    from src.paths import storage_status
+
+    st = storage_status()
+    log.info(
+        "Storage %s | sqlite=%s videos=%s editorial=%s push_subs=%s",
+        st["path"],
+        st["sqlite"],
+        st["videos"],
+        st["editorial"],
+        st["push_subs"],
+    )
+    if st.get("warn_no_volume"):
+        log.warning(
+            "Desk storage looks empty on Railway — mount a persistent volume at "
+            "/app/data (or set COIN_WIRE_DATA). Without it, history / Shorts / "
+            "push subscriptions wipe on every deploy."
+        )
 
 def _sync_broll_background() -> None:
     """R2 pull can take minutes — never block PORT / Railway health on it."""

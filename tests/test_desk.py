@@ -148,5 +148,9 @@ def test_health_without_password(monkeypatch):
     client = TestClient(app, follow_redirects=False)
     res = client.get("/health")
     assert res.status_code == 200
-    assert res.json() == {"ok": True, "desk": False}
+    body = res.json()
+    assert body["ok"] is True
+    assert body["desk"] is False
+    assert "storage" in body
+    assert "path" in body["storage"]
     assert client.get("/").status_code == 404
