@@ -49,16 +49,13 @@ def test_score_rules_penalizes_long_outro_and_charts():
 def test_phone_repost_caption_has_platforms():
     text = build_phone_repost_caption("Bitcoin ETF inflows hit $1B", youtube_url="https://youtu.be/x")
     assert "TikTok" in text
-    assert "Threads" in text
     assert "https://youtu.be/x" in text
 
 
 def test_phone_copy_packs_bodies_are_plain():
     packs = phone_copy_packs("Bitcoin ETF inflows hit $1B", youtube_url="https://youtu.be/x")
-    assert len(packs) >= 2
+    assert len(packs) >= 1
     tiktok_hint, tiktok_body = packs[0]
-    threads_hint, threads_body = packs[1]
     assert "TikTok" in tiktok_hint
-    assert "Threads" in threads_hint
     assert "long-press" not in tiktok_body.lower()
-    assert "https://youtu.be/x" in threads_body or "https://youtu.be/x" in packs[-1][1]
+    assert all("Threads" not in hint for hint, _body in packs)

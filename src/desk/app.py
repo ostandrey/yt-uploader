@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.content.copy_guard import display_title, safe_caption
 from src.desk import auth, catalog, db
 
 DIR = Path(__file__).resolve().parent
@@ -100,18 +101,21 @@ def _public_pack(pack: dict | None) -> dict | None:
     if not pack:
         return None
     marks = pack.get("marks") or {name: False for name in db.PLATFORMS}
+    ig = safe_caption(str(pack.get("ig_caption") or ""))
+    carousel = safe_caption(catalog.carousel_caption_text())
     return {
         "id": pack.get("id"),
-        "title": pack.get("title") or "",
-        "ig_caption": pack.get("ig_caption") or pack.get("title") or "",
-        "threads_text": pack.get("threads_text") or pack.get("title") or "",
+        "title": display_title(str(pack.get("title") or "")),
+        "ig_caption": ig,
         "youtube_url": pack.get("youtube_url") or "",
         "qa_score": pack.get("qa_score"),
         "bytes": pack.get("bytes") or 0,
         "updated_at": pack.get("updated_at") or "",
         "marks": {name: bool(marks.get(name)) for name in db.PLATFORMS},
-        "carousel_caption": catalog.carousel_caption_text(),
+        "carousel_caption": carousel,
         "carousel": [p.name for p in catalog.list_carousel_slides()],
+        "caption_ready": bool(ig),
+        "fallback": bool(pack.get("fallback")),
     }
 
 
@@ -192,6 +196,7 @@ def today(request: Request):
             "nav": "today",
             "pack": _public_pack(pack),
             "has_thumb": bool(pack and catalog.resolve_thumb(pack)),
+            "editorial": catalog.load_editorial_items(),
         },
     )
 

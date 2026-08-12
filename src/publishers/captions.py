@@ -4,22 +4,43 @@ from __future__ import annotations
 
 from typing import List, Optional
 
+from src.content.copy_guard import looks_like_filename_slug, safe_caption
 from src.content.humanize_copy import (
     pick_threads_tags,
     should_use_hashtags,
 )
 from src.content.naturalize import naturalize_text
 
-DEFAULT_HASHTAGS = [
+APPROVED_HASHTAGS = [
     "bitcoin",
     "crypto",
     "cryptonews",
+    "btc",
     "ethereum",
-    "coinwire",
-    "marketnews",
+    "sec",
+    "etf",
+    "federalreserve",
+    "cryptoregulation",
+    "blockchain",
 ]
 
+TAG_HINTS = {
+    "bitcoin": ("bitcoin", "btc", "blackrock"),
+    "btc": ("bitcoin", "btc"),
+    "ethereum": ("ethereum", "eth", "ether"),
+    "sec": ("sec", "securities"),
+    "etf": ("etf", "inflow", "blackrock", "ishares"),
+    "federalreserve": ("fed", "fomc", "powell", "rates", "cpi"),
+    "cryptoregulation": ("sec", "regulation", "cftc", "law"),
+    "blockchain": ("blockchain", "onchain", "on-chain"),
+    "crypto": ("crypto",),
+    "cryptonews": ("news",),
+}
+
+DEFAULT_HASHTAGS = APPROVED_HASHTAGS[:6]
 DISCLAIMER = "Not financial advice. News and education only."
+IG_CTA = "Full breakdown on YouTube."
+CAROUSEL_CTA = "Swipe for context."
 
 
 def _seed_value(seed: str) -> int:
@@ -35,29 +56,84 @@ def should_add_engagement_question(seed: str, rate: float = 0.25) -> bool:
     return (_seed_value(seed) % 100) < int(rate * 100)
 
 
+def pick_approved_hashtags(text: str, count: int = 5) -> List[str]:
+    blob = (text or "").lower()
+    scored: list[tuple[int, str]] = []
+    for tag in APPROVED_HASHTAGS:
+        hints = TAG_HINTS.get(tag, (tag,))
+        score = sum(1 for hint in hints if hint and hint in blob)
+        if tag in {"crypto", "cryptonews"}:
+            score = max(score, 1)
+        scored.append((score, tag))
+    scored.sort(key=lambda item: (-item[0], APPROVED_HASHTAGS.index(item[1])))
+    picked: list[str] = []
+    for _score, tag in scored:
+        if tag not in picked:
+            picked.append(tag)
+        if len(picked) >= count:
+            break
+    return picked[:count]
+
+
+def _tag_line(text: str, count: int) -> str:
+    return " ".join(f"#{tag}" for tag in pick_approved_hashtags(text, count))
+
+
 def build_caption(
     title: str,
     description: str = "",
     *,
     hashtags: Optional[List[str]] = None,
     max_len: int = 2200,
-    include_disclaimer: bool = True,
+    include_disclaimer: bool = False,
+    tag_count: int = 5,
+    cta: str = IG_CTA,
 ) -> str:
-    tags = hashtags or DEFAULT_HASHTAGS
-    tag_line = " ".join(f"#{t.lstrip('#')}" for t in tags[:12])
-    parts = [naturalize_text(title.strip())]
+    title = naturalize_text(title.strip())
+    if looks_like_filename_slug(title):
+        title = ""
+    parts = [title]
     desc = naturalize_text((description or "").strip())
-    if desc and desc.lower() != title.strip().lower():
+    if desc and desc.lower() != title.lower():
         first = desc.split("\n")[0].strip()
-        if first and first not in parts[0]:
+        if first and first not in (parts[0] or ""):
             parts.append(first[:280])
+    if cta:
+        parts.append(cta)
     if include_disclaimer:
         parts.append(DISCLAIMER)
+    if hashtags:
+        tag_line = " ".join(f"#{t.lstrip('#')}" for t in hashtags[:tag_count])
+    else:
+        tag_line = _tag_line(f"{title} {description}", tag_count)
     parts.append(tag_line)
     caption = "\n\n".join(p for p in parts if p)
     if len(caption) <= max_len:
         return caption
     return caption[: max_len - 1].rstrip() + "..."
+
+
+def build_carousel_caption(
+    title: str,
+    description: str = "",
+    *,
+    source: str = "",
+    max_len: int = 2200,
+) -> str:
+    title = naturalize_text(title.strip())
+    if looks_like_filename_slug(title):
+        title = ""
+    desc = naturalize_text((description or "").strip())
+    first = desc.split("\n")[0].strip()[:280] if desc else ""
+    lines = [title]
+    if first and first.lower() not in title.lower():
+        lines.append(first)
+    lines.append(CAROUSEL_CTA)
+    if source:
+        lines.append(f"Source: {source}")
+    lines.append(_tag_line(f"{title} {description}", 4))
+    caption = "\n\n".join(p for p in lines if p)
+    return caption[:max_len]
 
 
 def build_threads_text(
@@ -68,7 +144,7 @@ def build_threads_text(
     engagement_question: str = "",
     seed: str = "",
 ) -> str:
-    """Threads hard limit is 500 characters. Reads like a person posted it."""
+    """Legacy Short-linked Threads helper. Desk no longer uses this path."""
     seed = seed or title
     lines = [naturalize_text(title.strip())]
     title_norm = lines[0].lower()
@@ -94,19 +170,14 @@ def phone_copy_packs(
     carousel_caption: str = "",
 ) -> list[tuple[str, str]]:
     """Hint + body pairs. Body is meant to be copied as-is (no extra lines)."""
-    ig = ig_caption.strip() or build_caption(title, max_len=400, include_disclaimer=True)
-    threads = threads_text.strip() or build_threads_text(title, youtube_url=youtube_url)
+    ig = safe_caption(ig_caption) or build_caption(title, max_len=2200)
     packs = [
-        ("TikTok / IG Reel — long-press NEXT message → Copy", ig[:400]),
-        ("Threads — long-press NEXT message → Copy (text only, no video)", threads[:500]),
+        ("TikTok / IG Reel — long-press NEXT message → Copy", ig[:2200]),
     ]
-    if carousel_caption.strip():
-        packs.insert(
-            1,
-            (
-                "IG carousel caption — long-press NEXT → Copy",
-                carousel_caption.strip()[:2200],
-            ),
+    carousel = safe_caption(carousel_caption)
+    if carousel:
+        packs.append(
+            ("IG carousel caption — long-press NEXT → Copy", carousel[:2200]),
         )
     if youtube_url:
         packs.append(

@@ -30,7 +30,9 @@ def test_rules_copy_from_article():
     assert copy.source == "rules"
     assert "Bitcoin" in copy.short_title or "bitcoin" in copy.short_title.lower()
     assert len(copy.script.split("\n")) >= 4
-    assert len(copy.threads_text) <= 500
+    assert copy.ig_caption
+    assert copy.carousel_caption
+    assert "Not financial advice" not in copy.ig_caption
 
 
 def test_validate_llm_payload_rejects_hype():
@@ -39,9 +41,8 @@ def test_validate_llm_payload_rejects_hype():
         {
             "short_title": "Buy now Bitcoin 100x moon",
             "script_lines": ["a", "b", "c", "d"],
-            "threads_text": "x",
-            "threads_question": "",
             "ig_caption": "y",
+            "carousel_caption": "z",
         },
         article,
     )
@@ -60,9 +61,8 @@ def test_validate_llm_payload_accepts_clean_json():
                 "Fed policy is still the macro backdrop for risk assets.",
                 "Follow Coin Wire for the next market shift.",
             ],
-            "threads_text": "Bitcoin ETF inflows turned positive on Friday.",
-            "threads_question": "Bullish or bearish from here?",
-            "ig_caption": "Bitcoin ETF inflows turned positive. #bitcoin #crypto #coinwire",
+            "ig_caption": "Bitcoin ETF inflows turned positive. Full breakdown on YouTube.\n\n#bitcoin #btc #etf #cryptonews #federalreserve",
+            "carousel_caption": "Bitcoin ETF inflows — swipe for the tape.\n\nSwipe for context.\n\nSource: coindesk\n\n#bitcoin #etf #cryptonews #btc",
         },
         article,
     )
@@ -81,6 +81,6 @@ def test_generate_content_merges_metadata():
     }
     content = generate_content(article)
     assert content["source_link"] == "https://example.com/eth"
-    assert content["threads_text"]
     assert content["ig_caption"]
+    assert content["carousel_caption"]
     assert content.get("copy_source") in ("rules", "llm")

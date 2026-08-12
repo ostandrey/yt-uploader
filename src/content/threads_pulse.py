@@ -1,22 +1,16 @@
 """
-Diversified Threads "news pulse" text (not a copy of Telegram HTML).
+Diversified Threads news flash (standalone text, not a Short caption).
 
-Several layout variants rotate by article hash so the feed does not look templated.
+No engagement questions. Hashtags only for regulatory stories (one tag).
 """
 
 from __future__ import annotations
 
 from typing import Dict, List, Literal
 
-from src.content.humanize_copy import (
-    bullet_to_prose,
-    pick_engagement_question,
-    pick_threads_tags,
-    should_use_hashtags,
-)
+from src.content.humanize_copy import bullet_to_prose
 from src.content.naturalize import naturalize_text
 from src.content.news_filter import extract_key_bullets
-from src.publishers.captions import should_add_engagement_question
 
 ThreadsTier = Literal["breaking", "insight", "strong", "standard"]
 PulseVariant = Literal[
@@ -24,7 +18,6 @@ PulseVariant = Literal[
     "prose",
     "takeaway",
     "context",
-    "question_lead",
     "breaking_lead",
     "minimal",
 ]
@@ -32,6 +25,7 @@ PulseVariant = Literal[
 MAX_LEN = 500
 
 TIER_RANK = {"standard": 1, "strong": 2, "insight": 3, "breaking": 4}
+REG_HINTS = ("sec", "cftc", "etf", "regulat", "fed ", "federal reserve", "fomc")
 
 
 def tier_meets_minimum(tier: str, minimum: str) -> bool:
@@ -50,10 +44,9 @@ def pick_pulse_variant(tier: str, seed: str) -> PulseVariant:
             "prose",
             "context",
             "takeaway",
-            "question_lead",
         ]
     elif tier == "insight":
-        pool = ["takeaway", "prose", "context", "question_lead", "minimal"]
+        pool = ["takeaway", "prose", "context", "minimal"]
     elif tier == "strong":
         pool = ["prose", "context", "bullets", "takeaway", "minimal"]
     else:
@@ -70,7 +63,6 @@ def _clip(text: str, max_len: int = MAX_LEN) -> str:
 
 
 def _breaking_opener(seed: str, title: str) -> str:
-    """Not every breaking post screams BREAKING — reads more human."""
     style = _seed_value(seed + ":brk") % 3
     if style == 0:
         return f"Breaking: {title}"
@@ -79,17 +71,32 @@ def _breaking_opener(seed: str, title: str) -> str:
     return f"Just in: {title}"
 
 
+def _is_regulatory(article: Dict) -> bool:
+    blob = f"{article.get('title', '')} {article.get('summary', '')}".lower()
+    return any(hint in blob for hint in REG_HINTS)
+
+
+def _regulatory_tag(article: Dict) -> str:
+    blob = f"{article.get('title', '')} {article.get('summary', '')}".lower()
+    if "sec" in blob:
+        return "#sec"
+    if "bitcoin" in blob or "btc" in blob:
+        return "#bitcoin"
+    return ""
+
+
 def build_threads_news_pulse(
     article: Dict,
     *,
     tier: str = "strong",
     seed: str = "",
-    question_rate: float = 0.25,
+    question_rate: float = 0.0,
 ) -> tuple[str, PulseVariant]:
     """
-    Build a plain-text Threads news post (no link, no HTML).
-    Returns (text, variant_name).
+    Build a plain-text Threads news flash (no video, no YouTube CTA).
+    question_rate is ignored — questions are a separate editorial type.
     """
+    del question_rate
     seed = seed or article.get("hash") or article.get("title", "")
     title = naturalize_text(article.get("title", ""))
     summary = naturalize_text(article.get("summary", ""))
@@ -136,13 +143,6 @@ def build_threads_news_pulse(
         elif bullets:
             lines.append(bullet_to_prose(bullets[0]))
 
-    elif variant == "question_lead":
-        lines.append(title)
-        if bullets:
-            lines.append(bullet_to_prose(bullets[0]))
-        if should_add_engagement_question(seed, question_rate):
-            lines.append(pick_engagement_question(seed))
-
     elif variant == "minimal":
         lines.append(title)
         if tier == "insight" and bullets:
@@ -151,16 +151,9 @@ def build_threads_news_pulse(
     else:
         lines.append(title)
 
-    # Trailing question on fewer posts (not stacked with question_lead)
-    if (
-        variant not in ("question_lead", "minimal")
-        and tier in ("breaking", "strong")
-        and should_add_engagement_question(seed + ":q", question_rate * 0.5)
-    ):
-        lines.append(pick_engagement_question(seed + ":q"))
-
     body = "\n\n".join(line for line in lines if line)
-    if should_use_hashtags(seed, rate=0.8):
-        tags = pick_threads_tags(seed)
-        body = f"{body}\n\n{tags}"
+    if _is_regulatory(article):
+        tag = _regulatory_tag(article)
+        if tag:
+            body = f"{body}\n\n{tag}"
     return _clip(body), variant

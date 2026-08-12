@@ -97,6 +97,17 @@ def main() -> None:
             elif pulse.get("reason"):
                 print(f"Threads pulse skip: {pulse['reason']}")
 
+            from src.content.editorial_jobs import after_telegram_post
+
+            editorial = after_telegram_post(
+                result["article"],
+                result["tier"],
+                publisher,
+                config,
+            )
+            if editorial.get("queued"):
+                print(f"Editorial queued: {', '.join(editorial['queued'])}")
+
             if not args.dry_run:
                 from src.publishers.telegram_publisher import control_keyboard
 

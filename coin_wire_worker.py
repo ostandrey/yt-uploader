@@ -5,6 +5,9 @@ Coin Wire background worker — runs on Railway or any always-on server.
 Schedule (see config/coin_wire.yaml, default America/New_York):
   Telegram news  — smart poll every 30 min (3–8/day, breaking ASAP)
   YouTube Shorts — 09:00, 18:00 (unlisted upload, auto-publish after delay)
+  TG weekly digest — Monday 09:00
+  Threads recap — Friday 18:00
+  TG polls — Wednesday/Friday 12:00
 
 Usage:
     python coin_wire_worker.py
@@ -98,6 +101,18 @@ def job_publish_pending() -> None:
 
 def job_telegram_bot() -> None:
     _run_script("poll_telegram_commands.py")
+
+
+def job_weekly_digest() -> None:
+    _run_script("post_editorial.py", "--weekly-digest")
+
+
+def job_threads_recap() -> None:
+    _run_script("post_editorial.py", "--threads-recap")
+
+
+def job_telegram_poll() -> None:
+    _run_script("post_editorial.py", "--poll")
 
 
 def job_cleanup() -> None:
@@ -266,6 +281,47 @@ def main() -> None:
         replace_existing=True,
         misfire_grace_time=3600,
     )
+
+    editorial_cfg = config.get("publishing", {}).get("editorial", {}) or {}
+    digest_time = schedule_cfg.get("weekly_digest", "09:00")
+    recap_time = schedule_cfg.get("threads_recap", "18:00")
+    poll_times: list[str] = schedule_cfg.get("telegram_poll_times", ["12:00"])
+    if editorial_cfg.get("weekly_digest", True):
+        hour, minute = _parse_hhmm(digest_time)
+        scheduler.add_job(
+            job_weekly_digest,
+            CronTrigger(day_of_week="mon", hour=hour, minute=minute, timezone=timezone),
+            id="weekly_digest",
+            replace_existing=True,
+            misfire_grace_time=7200,
+        )
+        log.info("Weekly digest: Monday %s", digest_time)
+    if editorial_cfg.get("threads_recap", True):
+        hour, minute = _parse_hhmm(recap_time)
+        scheduler.add_job(
+            job_threads_recap,
+            CronTrigger(day_of_week="fri", hour=hour, minute=minute, timezone=timezone),
+            id="threads_recap",
+            replace_existing=True,
+            misfire_grace_time=7200,
+        )
+        log.info("Threads recap: Friday %s", recap_time)
+    if int(editorial_cfg.get("poll_per_week", 0) or 0) > 0:
+        for index, time_str in enumerate(poll_times):
+            hour, minute = _parse_hhmm(time_str)
+            scheduler.add_job(
+                job_telegram_poll,
+                CronTrigger(
+                    day_of_week="wed,fri",
+                    hour=hour,
+                    minute=minute,
+                    timezone=timezone,
+                ),
+                id=f"telegram_poll_{index}",
+                replace_existing=True,
+                misfire_grace_time=7200,
+            )
+        log.info("Telegram polls: Wed/Fri %s", ", ".join(poll_times))
 
     log.info("Worker ready at %s", datetime.now().isoformat())
 

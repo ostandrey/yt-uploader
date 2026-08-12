@@ -39,3 +39,5 @@ def test_breaking_variant_prefix():
     }
     text, variant = build_threads_news_pulse(article, tier="breaking", seed="brk1")
     assert variant == "breaking_lead" or "SEC" in text
+    assert variant != "question_lead"
+    assert "?" not in text

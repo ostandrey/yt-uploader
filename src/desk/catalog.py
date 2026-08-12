@@ -151,6 +151,64 @@ def list_carousel_slides() -> list[Path]:
     return sorted(p for p in folder.glob("*.jpg") if p.is_file() and _under(p, folder))
 
 
+def used_short_hashes() -> set[str]:
+    path = STORAGE / "used_short_articles.json"
+    if not path.exists():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return set(data.get("hashes") or [])
+    except (OSError, json.JSONDecodeError, TypeError):
+        return set()
+
+
+def load_editorial_items() -> list[dict[str, Any]]:
+    path = STORAGE / "desk_editorial.json"
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    items = data.get("items") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        out.append(
+            {
+                "kind": str(item.get("kind") or "note"),
+                "label": str(item.get("label") or item.get("kind") or "Copy"),
+                "text": text,
+            }
+        )
+    return out[:8]
+
+
+def write_editorial_items(items: list[dict[str, Any]]) -> None:
+    STORAGE.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "updated_at": _now(),
+        "items": [
+            {
+                "kind": str(item.get("kind") or "note"),
+                "label": str(item.get("label") or item.get("kind") or "Copy"),
+                "text": str(item.get("text") or "").strip(),
+            }
+            for item in items
+            if str(item.get("text") or "").strip()
+        ][:8],
+    }
+    (STORAGE / "desk_editorial.json").write_text(
+        json.dumps(payload, indent=2), encoding="utf-8"
+    )
+
+
 def carousel_caption_text() -> str:
     folder = carousel_dir()
     path = folder / "caption.txt"

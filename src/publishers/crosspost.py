@@ -14,10 +14,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
-from src.content.humanize_copy import pick_engagement_question
 from src.publishers.captions import (
     build_caption,
-    build_threads_text,
     should_add_engagement_question,
 )
 from src.media.instagram_feed_image import create_instagram_feed_assets
@@ -97,30 +95,20 @@ def run_crosspost(
 
     want_tiktok = _platform_enabled(config, "tiktok")
     want_ig = _platform_enabled(config, "instagram")
-    want_threads = _platform_enabled(config, "threads")
+    want_threads_cfg = _platform_enabled(config, "threads")
+    want_threads = want_threads_cfg and bool(
+        _platform_cfg(config, "threads").get("short_linked", False)
+    )
+    if want_threads_cfg and not want_threads:
+        skipped["threads"] = "short_linked_disabled"
 
     if not any((want_tiktok, want_ig, want_threads)):
         return {"results": results, "errors": errors, "skipped": skipped}
 
     caption = build_caption(title, description)
-    threads_cfg = _platform_cfg(config, "threads")
-    if threads_text_override.strip():
-        threads_text = threads_text_override.strip()
-        if youtube_url and youtube_url not in threads_text:
-            threads_text = f"{threads_text}\n\n{youtube_url}"[:500]
-    else:
-        engagement = ""
-        if threads_cfg.get("engagement_questions", True):
-            rate = float(threads_cfg.get("question_rate", 0.25))
-            if should_add_engagement_question(seed, rate):
-                engagement = pick_engagement_question(seed)
-        threads_text = build_threads_text(
-            title,
-            description,
-            youtube_url=youtube_url,
-            engagement_question=engagement,
-            seed=seed,
-        )
+    threads_text = threads_text_override.strip()
+    if threads_text and youtube_url and youtube_url not in threads_text:
+        threads_text = f"{threads_text}\n\n{youtube_url}"[:500]
 
     ig_caption = ig_caption_override.strip() or caption
 

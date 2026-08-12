@@ -57,6 +57,26 @@ def test_write_and_load_latest(tmp_path, monkeypatch):
     assert catalog.resolve_video_file(latest) == video.resolve()
 
 
+def test_public_pack_never_uses_filename_slug(tmp_path, monkeypatch):
+    from src.content.copy_guard import safe_caption
+    from src.desk.app import _public_pack
+
+    pack = {
+        "title": "short_20260811_2200_bitcoin_stuck_as_etf_inflows_o",
+        "ig_caption": "",
+        "threads_text": "short 20260811 2200 bitcoin stuck as etf inflows o",
+        "marks": {"tiktok": False, "instagram": False, "threads": False},
+    }
+    monkeypatch.setattr("src.desk.catalog.list_carousel_slides", lambda: [])
+    monkeypatch.setattr("src.desk.catalog.carousel_caption_text", lambda: pack["title"])
+    public = _public_pack(pack)
+    assert public["title"] == "Short готовий"
+    assert public["ig_caption"] == ""
+    assert public["caption_ready"] is False
+    assert "threads_text" not in public
+    assert safe_caption(pack["title"]) == ""
+
+
 def test_login_and_today(tmp_path, monkeypatch):
     videos = tmp_path / "videos"
     videos.mkdir()
@@ -99,6 +119,7 @@ def test_login_and_today(tmp_path, monkeypatch):
     assert "Desk title" in home.text
     assert 'data-copy="ig_caption"' in home.text
     assert 'data-share="tiktok"' in home.text
+    assert 'data-share="threads"' not in home.text
     assert 'id="pack-json"' in home.text
     assert 'id="dock"' in home.text
     assert "Instagram карусель" in home.text

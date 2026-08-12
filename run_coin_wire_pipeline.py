@@ -282,6 +282,18 @@ def run_pipeline(
 
     if skip_upload:
         _save_used_short_hash(article["hash"])
+        try:
+            from src.content.editorial_log import append_event
+
+            append_event(
+                kind="short",
+                title=content.get("title") or article.get("title") or "",
+                summary=article.get("summary") or "",
+                tier=str(article.get("tier") or ""),
+                article_hash=article.get("hash") or "",
+            )
+        except Exception as log_exc:
+            print(f"Editorial log skip: {log_exc}")
         _render_ig_carousel(content, work_dir)
         _publish_desk_pack(content, video_path, work_dir)
         try:
@@ -399,6 +411,18 @@ def run_pipeline(
     print(format_crosspost_summary(crosspost))
 
     _save_used_short_hash(article["hash"])
+    try:
+        from src.content.editorial_log import append_event
+
+        append_event(
+            kind="short",
+            title=content.get("title") or article.get("title") or "",
+            summary=article.get("summary") or "",
+            tier=str(article.get("tier") or ""),
+            article_hash=article.get("hash") or "",
+        )
+    except Exception as log_exc:
+        print(f"Editorial log skip: {log_exc}")
 
     qa_text = ""
     try:

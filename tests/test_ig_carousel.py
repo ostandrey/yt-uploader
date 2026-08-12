@@ -37,7 +37,7 @@ def test_render_six_slides(tmp_path: Path):
         image = Image.open(path)
         assert image.size == (1080, 1350)
     caption = (tmp_path / "ig_carousel" / "caption.txt").read_text(encoding="utf-8")
-    assert "YouTube" in caption
+    assert "Swipe for context" in caption
     assert carousel_caption({"title": "Fed holds rates"}) 
 
 

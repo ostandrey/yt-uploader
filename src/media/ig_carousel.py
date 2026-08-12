@@ -105,16 +105,20 @@ def build_what_moved(content: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def carousel_caption(content: dict[str, Any]) -> str:
+    override = naturalize_text(str(content.get("carousel_caption") or "")).strip()
+    if override:
+        return override[:2200]
     title = naturalize_text(content.get("title") or "")
     desc = _sentences(naturalize_text(content.get("description") or ""), 2)
     body = " ".join(desc) if desc else ""
+    source = _source_label(content)
     lines = [title]
     if body and body.lower() not in title.lower():
         lines.append(body)
-    lines.append("")
-    lines.append("Swipe for context. Full breakdown on YouTube.")
-    lines.append("")
-    lines.append("#bitcoin #crypto #cryptonews")
+    lines.append("Swipe for context.")
+    if source:
+        lines.append(f"Source: {source}")
+    lines.append("#bitcoin #crypto #cryptonews #etf")
     return "\n".join(lines)[:2200]
 
 

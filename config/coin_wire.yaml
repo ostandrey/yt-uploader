@@ -43,6 +43,8 @@ content:
 
   copy_llm:
     enabled: true              # uses COPY_LLM_API_KEY when set; rules fallback otherwise
+    # Prefer ChatGPT: COPY_LLM_MODEL=gpt-4o-mini (or gpt-4.1-mini via Abacus RouteLLM)
+    # COPY_LLM_BASE_URL=https://routellm.abacus.ai/v1  # only if key is Abacus, not OpenAI
 
 publishing:
   telegram:
@@ -75,16 +77,25 @@ publishing:
     carousel: true                        # sometimes 2-slide carousel (headline + extra photo)
     carousel_rate: 0.35
   threads:
-    enabled: true                         # needs THREADS_* credentials
-    mode: text                            # text-only (no native video for now)
-    engagement_questions: true
-    question_rate: 0.25
+    enabled: true                         # news flash via news_pulse; Short-linked off
+    mode: text                            # text-only (no native video)
+    short_linked: false                   # do not echo YouTube Shorts into Threads
+    engagement_questions: false
+    question_rate: 0
     news_pulse:
       enabled: true
       min_tier: strong
       max_per_day: 3
       cooldown_minutes: 120
-      question_rate: 0.25
+      question_rate: 0
+      skip_if_short_used: true
+  editorial:
+    opinion_per_week: 3
+    question_per_week: 3
+    poll_per_week: 3
+    context_on_breaking: true
+    weekly_digest: true
+    threads_recap: true
 
 # Local B-roll auto-fill (Pexels/Pixabay → folders → ffprobe + YOLO marks rejects)
 broll_library:
@@ -113,3 +124,6 @@ automation:
   schedule:
     telegram_floor: ["08:00", "12:00", "17:00"]   # minimum posts by these times
     shorts: ["09:00", "18:00"]             # morning + evening scroll
+    weekly_digest: "09:00"                 # Monday Telegram digest
+    threads_recap: "18:00"                 # Friday Threads recap
+    telegram_poll_times: ["12:00"]         # Wed + Fri polls

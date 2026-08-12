@@ -15,11 +15,12 @@ from src.publishers.captions import (
 from src.publishers.crosspost import format_crosspost_summary, run_crosspost
 
 
-def test_build_caption_includes_hashtags_and_disclaimer():
+def test_build_caption_includes_hashtags_without_disclaimer():
     caption = build_caption("Bitcoin Drops 4%", "Markets reacted to the Fed.")
     assert "Bitcoin Drops 4%" in caption
     assert "#bitcoin" in caption
-    assert "Not financial advice" in caption
+    assert "Not financial advice" not in caption
+    assert "Full breakdown on YouTube." in caption
 
 
 def test_threads_text_under_500():
@@ -88,8 +89,9 @@ def test_run_crosspost_skips_missing_credentials(tmp_path: Path, monkeypatch):
             "threads": {"enabled": True, "mode": "text"},
         }},
     )
-    assert "tiktok" in out["skipped"]
+    assert "tiktok" in out["skipped"] or "tiktok" in out["errors"]
     assert "threads" in out["skipped"]
+    assert out["skipped"]["threads"] == "short_linked_disabled"
     assert "instagram" in out["skipped"] or "instagram_reel" in out["skipped"]
 
 

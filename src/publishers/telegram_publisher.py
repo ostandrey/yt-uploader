@@ -108,10 +108,37 @@ class TelegramPublisher:
         except requests.RequestException:
             pass
 
-    def post_to_channel(self, text: str) -> dict:
+    def post_poll_to_channel(
+        self,
+        question: str,
+        options: Sequence[str],
+        *,
+        is_anonymous: bool = True,
+    ) -> dict:
         if not self.channel_id:
             raise ValueError("TELEGRAM_CHANNEL_ID is not set")
-        return self._send(self.channel_id, text)
+        if not self.bot_token:
+            raise ValueError("Telegram bot token is missing")
+        cleaned = [str(opt).strip()[:100] for opt in options if str(opt).strip()][:10]
+        if len(cleaned) < 2:
+            raise ValueError("poll needs at least 2 options")
+        payload = {
+            "chat_id": self.channel_id,
+            "question": (question or "").strip()[:300],
+            "options": cleaned,
+            "is_anonymous": is_anonymous,
+        }
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        response = requests.post(
+            f"{self.api_base}/sendPoll",
+            data=body,
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            timeout=30,
+        )
+        data = response.json()
+        if not data.get("ok"):
+            raise RuntimeError(f"Telegram sendPoll error: {data}")
+        return data
 
     def post_to_channel_html(
         self,

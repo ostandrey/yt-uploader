@@ -125,6 +125,14 @@ def maybe_post_news_pulse(
         return {"posted": False, "reason": "threads_not_configured"}
 
     article_hash = article.get("hash", "")
+    if article_hash:
+        try:
+            from src.desk.catalog import used_short_hashes
+
+            if article_hash in used_short_hashes():
+                return {"posted": False, "reason": "short_already_used"}
+        except Exception:
+            pass
     state = load_threads_state(state_path, cfg.timezone)
 
     if article_hash and article_hash in state.posted_hashes:

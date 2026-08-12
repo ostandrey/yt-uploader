@@ -2,7 +2,9 @@
 Optional LLM copy layer for Coin Wire social posts.
 
 Rules-based generation is always the fallback. When COPY_LLM_API_KEY is set,
-one cheap JSON call rewrites Short script + Threads + Instagram caption.
+one JSON call returns Short script + IG Reel caption + carousel caption.
+
+Threads copy is independent (news flash / editorial) — not part of this call.
 
 Env:
   COPY_LLM_API_KEY          OpenAI or compatible API key
@@ -25,12 +27,8 @@ from dotenv import load_dotenv
 
 from src.content.naturalize import naturalize_text
 from src.content.short_script_generator import ShortScriptGenerator
-from src.content.humanize_copy import pick_engagement_question
-from src.publishers.captions import (
-    build_caption,
-    build_threads_text,
-    should_add_engagement_question,
-)
+from src.content.voice import NEWS_DESK_VOICE
+from src.publishers.captions import build_caption, build_carousel_caption
 
 log = logging.getLogger(__name__)
 
@@ -43,20 +41,19 @@ BANNED_PHRASES = (
     "not financial advice",
     "pump",
     "moon",
+    "delve",
+    "game changer",
+    "here's what you need to know",
+    "in today's",
+    "it's worth noting",
+    "what do you think",
+    "drop a comment",
 )
 
-SYSTEM_PROMPT = """You write English crypto news copy for Coin Wire (Telegram, YouTube Shorts, Threads, Instagram).
+SYSTEM_PROMPT = f"""{NEWS_DESK_VOICE}
 
-Sound like a sharp human editor at a news desk, NOT like AI or a marketing bot.
-
-Rules:
-- Use ONLY facts from the provided article. Do not invent numbers, quotes, or events.
-- Short sentences. Plain words. No filler ("In today's...", "It's worth noting", "landscape", "navigate").
-- Never use em dashes. Use commas, periods, or hyphens instead.
-- No hype, no "buy now", no disclaimers in Threads text.
-- Questions should be casual and specific to the story, not generic surveys.
-- Output valid JSON only, matching the schema exactly."""
-
+You write English crypto news copy for YouTube Shorts and Instagram.
+Output valid JSON only, matching the schema exactly."""
 
 USER_PROMPT = """Article title: {title}
 Summary: {summary}
@@ -65,11 +62,10 @@ Tier: {tier}
 
 Return JSON:
 {{
-  "short_title": "YouTube Short title, max 90 chars",
+  "short_title": "YouTube Short title, max 90 chars, no dash punctuation",
   "script_lines": ["3 to 5 short spoken sentences for a 18-28 sec voiceover; last line is a short CTA only", "..."],
-  "threads_text": "Threads post, max 420 chars, headline + 1-2 factual lines",
-  "threads_question": "optional engagement question or empty string",
-  "ig_caption": "Instagram caption, max 500 chars, factual + 3-5 hashtags at end"
+  "ig_caption": "Instagram Reel / TikTok caption. First 125 chars are a standalone hook with an active verb and a real number if the article has one. Then 2-4 factual sentences. End with the line: Full breakdown on YouTube. Then a blank line and exactly 5 hashtags from this set only: #bitcoin #crypto #cryptonews #btc #ethereum #sec #etf #federalreserve #cryptoregulation #blockchain. Max 2200 chars. No NFA, no questions, no emoji, no em dashes.",
+  "carousel_caption": "Instagram carousel caption. First 125 chars explain what the slides cover. Then 2 sentences of context. Then the line: Swipe for context. Then Source: {source}. Then exactly 4 hashtags from the same approved set. Max 2200 chars. No NFA, no questions, no em dashes."
 }}"""
 
 
@@ -77,18 +73,18 @@ Return JSON:
 class PlatformCopy:
     short_title: str
     script: str
-    threads_text: str
-    threads_question: str
     ig_caption: str
+    carousel_caption: str
     source: str = "rules"
 
     def as_content_patch(self) -> Dict[str, str]:
         return {
             "title": self.short_title,
             "script": self.script,
-            "threads_text": self.threads_text,
-            "threads_question": self.threads_question,
             "ig_caption": self.ig_caption,
+            "carousel_caption": self.carousel_caption,
+            "threads_text": "",
+            "threads_question": "",
             "copy_source": self.source,
         }
 
@@ -101,25 +97,58 @@ def llm_configured() -> bool:
     return bool(key)
 
 
+def chat_json(system: str, user: str, *, timeout: int = 45) -> Optional[dict]:
+    """One OpenAI-compatible JSON chat completion. None on any failure."""
+    load_dotenv()
+    api_key = os.getenv("COPY_LLM_API_KEY", "").strip()
+    if not api_key:
+        return None
+    model = os.getenv("COPY_LLM_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+    base_url = os.getenv("COPY_LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    try:
+        response = requests.post(
+            f"{base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "temperature": 0.35,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        raw = response.json()["choices"][0]["message"]["content"]
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            log.info("LLM copy ok model=%s", model)
+            return data
+        return None
+    except Exception as exc:
+        log.warning("LLM JSON call failed (model=%s): %s", model, exc)
+        return None
+
+
 def _rules_copy(article: Dict[str, Any], *, seed: str = "") -> PlatformCopy:
     base = ShortScriptGenerator().from_article(article)
-    seed = seed or article.get("hash") or base["title"]
-    question = ""
-    if should_add_engagement_question(seed, 0.25):
-        question = pick_engagement_question(seed)
-    threads = build_threads_text(
+    source = str(article.get("source") or "")
+    ig = build_caption(base["title"], base.get("description", ""), max_len=2200)
+    carousel = build_carousel_caption(
         base["title"],
         base.get("description", ""),
-        engagement_question=question,
-        seed=seed,
+        source=source,
     )
-    ig = build_caption(base["title"], base.get("description", ""), max_len=500)
     return PlatformCopy(
         short_title=base["title"],
         script=base["script"],
-        threads_text=threads,
-        threads_question=question,
         ig_caption=ig,
+        carousel_caption=carousel,
         source="rules",
     )
 
@@ -143,75 +172,50 @@ def _validate_llm_payload(data: dict, article: Dict[str, Any]) -> Optional[Platf
         return None
 
     script = naturalize_text("\n".join(script_lines[:5]))
-    threads = _clip(str(data.get("threads_text", "")), 420)
-    question = _clip(str(data.get("threads_question", "") or ""), 120)
-    ig = _clip(str(data.get("ig_caption", "")), 500)
+    ig = _clip(str(data.get("ig_caption", "")), 2200)
+    carousel = _clip(str(data.get("carousel_caption", "")), 2200)
+    if len(ig) < 20:
+        return None
 
-    combined = f"{title} {script} {threads} {ig} {question}".lower()
+    combined = f"{title} {script} {ig} {carousel}".lower()
     if any(bad in combined for bad in BANNED_PHRASES):
         return None
 
-    # Require some overlap with source headline words (anti-hallucination guard)
     src_words = set(re.findall(r"[a-z0-9]{4,}", article.get("title", "").lower()))
     out_words = set(re.findall(r"[a-z0-9]{4,}", combined.lower()))
     if src_words and len(src_words & out_words) < min(2, len(src_words)):
         return None
 
-    if question and question not in threads:
-        threads = _clip(f"{threads}\n\n{question}", 420)
+    if not carousel:
+        carousel = build_carousel_caption(
+            title,
+            article.get("summary", ""),
+            source=str(article.get("source") or ""),
+        )
 
     return PlatformCopy(
         short_title=title,
         script=script,
-        threads_text=threads,
-        threads_question=question,
         ig_caption=ig,
+        carousel_caption=carousel,
         source="llm",
     )
 
 
 def _call_llm(article: Dict[str, Any]) -> Optional[PlatformCopy]:
-    load_dotenv()
-    api_key = os.getenv("COPY_LLM_API_KEY", "").strip()
-    if not api_key:
+    if not llm_configured():
         return None
-
-    model = os.getenv("COPY_LLM_MODEL", "gpt-4o-mini").strip()
-    base_url = os.getenv("COPY_LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     tier = str(article.get("tier", "standard"))
-
     user_msg = USER_PROMPT.format(
         title=naturalize_text(article.get("title", "")),
         summary=naturalize_text(article.get("summary", ""))[:800],
         source=article.get("source", "news"),
         tier=tier,
     )
-
-    try:
-        response = requests.post(
-            f"{base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "temperature": 0.4,
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
-                ],
-            },
-            timeout=45,
-        )
-        response.raise_for_status()
-        raw = response.json()["choices"][0]["message"]["content"]
-        data = json.loads(raw)
-        return _validate_llm_payload(data, article)
-    except Exception as exc:
-        log.warning("LLM copy generation failed, using rules: %s", exc)
+    data = chat_json(SYSTEM_PROMPT, user_msg)
+    if not data:
         return None
+    return _validate_llm_payload(data, article)
 
 
 def generate_platform_copy(

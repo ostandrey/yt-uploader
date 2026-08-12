@@ -1,17 +1,15 @@
 (() => {
   const toastEl = document.getElementById("toast");
   const packEl = document.getElementById("pack-json");
-  const fallback = document.getElementById("clip-fallback");
+  const fallback = document.getElementById("clip-fallback") || document.getElementById("clip-fallback-editorial");
   const dock = document.getElementById("dock");
   const dockBtn = document.getElementById("dock-btn");
   const pwaHint = document.getElementById("pwa-hint");
-  if (!packEl) return;
-  const pack = JSON.parse(packEl.textContent);
-  const ORDER = ["tiktok", "instagram", "threads"];
+  const pack = packEl ? JSON.parse(packEl.textContent) : {};
+  const ORDER = ["tiktok", "instagram"];
   const SHARE_LABEL = {
     tiktok: "Далі: Share TikTok",
     instagram: "Далі: Share Instagram",
-    threads: "Далі: Share Threads",
   };
   let blobFile = null;
   let loading = null;
@@ -99,7 +97,7 @@
     }
   }
 
-  if (!saveDataOn()) videoFile().catch(() => {});
+  if (packEl && !saveDataOn()) videoFile().catch(() => {});
 
   function setBusy(on) {
     document.querySelectorAll("[data-share], #dock-btn").forEach((b) => {
@@ -108,7 +106,11 @@
   }
 
   async function shareVideo(text, btn) {
-    await copyText(text);
+    if (text) {
+      await copyText(text);
+    } else {
+      toast("Немає опису — після Share встав свій текст", false);
+    }
     setBusy(true);
     if (btn) flashLabel(btn, "Завантажую…");
     try {
@@ -144,8 +146,8 @@
   }
 
   function captionFor(kind) {
-    if (kind === "threads") return pack.threads_text || pack.title || "";
-    return pack.ig_caption || pack.title || "";
+    if (kind === "carousel") return pack.carousel_caption || "";
+    return pack.ig_caption || "";
   }
 
   async function carouselFiles() {
@@ -163,7 +165,7 @@
   }
 
   async function shareCarousel(btn) {
-    const caption = pack.carousel_caption || pack.title || "";
+    const caption = pack.carousel_caption || "";
     await copyText(caption);
     if (btn) {
       btn.disabled = true;
@@ -220,22 +222,28 @@
       if (ok) flashLabel(btn, "Скопійовано");
     });
   });
+  document.querySelectorAll("[data-copy-text]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const index = btn.getAttribute("data-copy-text");
+      const box = document.querySelector(`[data-editorial="${index}"]`);
+      const ok = await copyText(box ? box.value : "");
+      if (ok) flashLabel(btn, "Скопійовано");
+    });
+  });
   document.querySelectorAll("[data-share-carousel]").forEach((btn) => {
     btn.addEventListener("click", () => shareCarousel(btn));
   });
   document.querySelectorAll("[data-share]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const kind = btn.getAttribute("data-share");
-      if (kind === "threads") shareText(captionFor(kind));
-      else shareVideo(captionFor(kind), btn);
+      shareVideo(captionFor(kind), btn);
     });
   });
   if (dockBtn) {
     dockBtn.addEventListener("click", () => {
       const kind = dockBtn.dataset.kind;
       if (!kind) return;
-      if (kind === "threads") shareText(captionFor(kind));
-      else shareVideo(captionFor(kind), dockBtn);
+      shareVideo(captionFor(kind), dockBtn);
     });
   }
   document.querySelectorAll("textarea[data-select]").forEach((box) => {
