@@ -173,8 +173,12 @@ def used_short_hashes() -> set[str]:
         return set()
 
 
-def load_editorial_items() -> list[dict[str, Any]]:
-    path = STORAGE / "desk_editorial.json"
+def _editorial_path() -> Path:
+    return STORAGE / "desk_editorial.json"
+
+
+def _raw_editorial_items() -> list[dict[str, Any]]:
+    path = _editorial_path()
     if not path.exists():
         return []
     try:
@@ -185,39 +189,114 @@ def load_editorial_items() -> list[dict[str, Any]]:
     if not isinstance(items, list):
         return []
     out: list[dict[str, Any]] = []
-    for item in items:
+    for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
         text = str(item.get("text") or "").strip()
         if not text:
             continue
+        created_at = str(item.get("created_at") or item.get("ts") or "").strip()
+        item_id = str(item.get("id") or "").strip() or f"e{index}-{hash(text) & 0xFFFF:x}"
         out.append(
             {
+                "id": item_id,
                 "kind": str(item.get("kind") or "note"),
                 "label": str(item.get("label") or item.get("kind") or "Copy"),
                 "text": text,
+                "created_at": created_at,
+                "done": bool(item.get("done")),
             }
         )
+    return out
+
+
+def load_editorial_items() -> list[dict[str, Any]]:
+    now = datetime.now(timezone.utc)
+    out: list[dict[str, Any]] = []
+    for item in _raw_editorial_items():
+        created_at = str(item.get("created_at") or "")
+        done = bool(item.get("done"))
+        age_hours = _age_hours(created_at, now)
+        is_new = (not done) and age_hours is not None and age_hours < 8
+        row = dict(item)
+        row.update(
+            {
+                "is_new": is_new,
+                "badge": "НОВЕ" if is_new else ("ГОТОВО" if done else "РАНІШЕ"),
+                "badge_kind": "new" if is_new else ("done" if done else "old"),
+                "when": _short_ts(created_at) if created_at else "",
+                "age": _age_label(age_hours),
+            }
+        )
+        out.append(row)
+    out.sort(
+        key=lambda row: (
+            bool(row.get("done")),
+            not bool(row.get("is_new")),
+            str(row.get("created_at") or ""),
+        )
+    )
     return out[:8]
 
 
 def write_editorial_items(items: list[dict[str, Any]]) -> None:
     STORAGE.mkdir(parents=True, exist_ok=True)
+    now = _now()
     payload = {
-        "updated_at": _now(),
+        "updated_at": now,
         "items": [
             {
+                "id": str(item.get("id") or f"e-{hash(str(item.get('text') or '')) & 0xFFFFF:x}"),
                 "kind": str(item.get("kind") or "note"),
                 "label": str(item.get("label") or item.get("kind") or "Copy"),
                 "text": str(item.get("text") or "").strip(),
+                "created_at": str(item.get("created_at") or now),
+                "done": bool(item.get("done")),
             }
             for item in items
             if str(item.get("text") or "").strip()
         ][:8],
     }
-    (STORAGE / "desk_editorial.json").write_text(
-        json.dumps(payload, indent=2), encoding="utf-8"
-    )
+    _editorial_path().write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def set_editorial_done(item_id: str, done: bool = True) -> Optional[dict[str, Any]]:
+    items = _raw_editorial_items()
+    found = None
+    for item in items:
+        if item.get("id") == item_id:
+            item["done"] = bool(done)
+            found = item
+            break
+    if not found:
+        return None
+    write_editorial_items(items)
+    enriched = next((row for row in load_editorial_items() if row.get("id") == item_id), None)
+    return enriched or found
+
+
+def _age_hours(iso: str, now: Optional[datetime] = None) -> Optional[float]:
+    if not iso:
+        return None
+    try:
+        ts = datetime.fromisoformat(iso)
+    except ValueError:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    return max(0.0, (now - ts.astimezone(timezone.utc)).total_seconds() / 3600)
+
+
+def _age_label(hours: Optional[float]) -> str:
+    if hours is None:
+        return ""
+    if hours < 1:
+        return "щойно"
+    if hours < 24:
+        return f"{int(hours)} год тому"
+    days = int(hours // 24)
+    return f"{days} дн тому"
 
 
 def carousel_caption_text() -> str:

@@ -3,6 +3,51 @@ from pathlib import Path
 from src.desk import auth, catalog, db
 
 
+def test_editorial_new_vs_old_badges(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setattr(catalog, "STORAGE", tmp_path)
+    now = datetime.now(timezone.utc)
+    catalog.write_editorial_items(
+        [
+            {
+                "id": "new-1",
+                "kind": "opinion",
+                "label": "Threads — opinion",
+                "text": "Fresh Anchorpoint take",
+                "created_at": now.isoformat(),
+                "done": False,
+            },
+            {
+                "id": "old-1",
+                "kind": "opinion",
+                "label": "Threads — opinion",
+                "text": "Old Fidelity take",
+                "created_at": (now - timedelta(hours=20)).isoformat(),
+                "done": False,
+            },
+            {
+                "id": "done-1",
+                "kind": "context",
+                "label": "Telegram — контекст",
+                "text": "Already posted context",
+                "created_at": now.isoformat(),
+                "done": True,
+            },
+        ]
+    )
+    items = catalog.load_editorial_items()
+    by_id = {item["id"]: item for item in items}
+    assert by_id["new-1"]["badge"] == "НОВЕ"
+    assert by_id["new-1"]["badge_kind"] == "new"
+    assert by_id["old-1"]["badge"] == "РАНІШЕ"
+    assert by_id["done-1"]["badge"] == "ГОТОВО"
+    assert items[0]["id"] == "new-1"
+    marked = catalog.set_editorial_done("new-1", True)
+    assert marked["done"] is True
+    assert marked["badge"] == "ГОТОВО"
+
+
 def test_session_roundtrip(monkeypatch):
     monkeypatch.setenv("DESK_PASSWORD", "test-pass-desk")
     monkeypatch.setenv("DESK_SECRET", "test-secret-desk")

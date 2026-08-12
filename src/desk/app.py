@@ -33,6 +33,11 @@ SECURITY_HEADERS = {
 }
 
 
+class EditorialDoneBody(BaseModel):
+    id: str
+    done: bool = True
+
+
 class MarkBody(BaseModel):
     id: int
     platform: str
@@ -335,6 +340,39 @@ def api_push_subscribe(request: Request, body: PushSubBody):
         }
     )
     return JSONResponse({"ok": True})
+
+
+@app.post("/api/push/test")
+def api_push_test(request: Request):
+    if not _authed(request):
+        raise HTTPException(401, "auth required")
+    if not push.push_configured():
+        raise HTTPException(503, "push unavailable")
+    result = push.notify_desk_push(
+        "Desk push OK",
+        "Якщо бачиш це — сповіщення працюють",
+        url="/",
+    )
+    return JSONResponse(result)
+
+@app.post("/api/editorial/done")
+def api_editorial_done(request: Request, body: EditorialDoneBody):
+    if not _authed(request):
+        raise HTTPException(401, "auth required")
+    item = catalog.set_editorial_done(body.id, body.done)
+    if not item:
+        raise HTTPException(404, "unknown editorial item")
+    return JSONResponse(
+        {
+            "ok": True,
+            "id": item.get("id"),
+            "done": bool(item.get("done")),
+            "badge": item.get("badge"),
+            "badge_kind": item.get("badge_kind"),
+            "is_new": bool(item.get("is_new")),
+            "age": item.get("age") or "",
+        }
+    )
 
 
 @app.post("/api/mark")

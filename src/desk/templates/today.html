@@ -120,14 +120,21 @@
       <div class="platform-header">
         <h2>Threads / Telegram — скопіюй</h2>
       </div>
-      <p class="step">Окремі текстові пости, не підпис до Short. Copy → встав у Threads або Telegram.</p>
+      <p class="step">Окремі текстові пости. <strong>НОВЕ</strong> — ще не чіпав. <strong>РАНІШЕ</strong> — старі. Познач «Вже запостив», щоб не плутати.</p>
       {% for item in editorial %}
-      <div class="editorial-item">
-        <p class="editorial-label">{{ item.label }}</p>
-        <div class="actions">
-          <button type="button" class="btn-secondary" data-copy-text="{{ loop.index0 }}">Copy</button>
+      <div class="editorial-item {% if item.is_new %}is-new{% endif %} {% if item.done %}is-done{% endif %}" data-editorial-id="{{ item.id }}">
+        <div class="editorial-meta">
+          <p class="editorial-label">{{ item.label }}</p>
+          <span class="editorial-badge badge-{{ item.badge_kind }}">{{ item.badge }}{% if item.age %} · {{ item.age }}{% endif %}</span>
         </div>
-        <textarea readonly data-select data-editorial="{{ loop.index0 }}">{{ item.text }}</textarea>
+        <div class="actions">
+          <button type="button" class="btn-secondary" data-copy-text="{{ item.id }}">Copy</button>
+        </div>
+        <textarea readonly data-select data-editorial="{{ item.id }}">{{ item.text }}</textarea>
+        <label class="mark editorial-mark">
+          <input type="checkbox" data-editorial-done="{{ item.id }}" {% if item.done %}checked{% endif %}>
+          <span>Вже запостив</span>
+        </label>
       </div>
       {% endfor %}
     </section>

@@ -15,11 +15,13 @@ from typing import Dict, Optional
 from zoneinfo import ZoneInfo
 
 from src.content.threads_pulse import build_threads_news_pulse, tier_meets_minimum
+from src.content.story_dedupe import titles_similar
 from src.publishers.threads_publisher import ThreadsPublisher
+from src.paths import coin_wire_storage
 
 log = logging.getLogger(__name__)
 
-STATE_FILE = Path("data/storage/coin_wire/threads_daily_state.json")
+STATE_FILE = coin_wire_storage() / "threads_daily_state.json"
 
 
 @dataclass

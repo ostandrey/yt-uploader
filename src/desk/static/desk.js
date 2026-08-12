@@ -225,9 +225,39 @@
   document.querySelectorAll("[data-copy-text]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const index = btn.getAttribute("data-copy-text");
-      const box = document.querySelector(`[data-editorial="${index}"]`);
+      const box = document.querySelector(`[data-editorial="${CSS.escape(index)}"]`);
       const ok = await copyText(box ? box.value : "");
       if (ok) flashLabel(btn, "Скопійовано");
+    });
+  });
+  document.querySelectorAll("[data-editorial-done]").forEach((box) => {
+    box.addEventListener("change", async () => {
+      const id = box.getAttribute("data-editorial-done");
+      const card = box.closest(".editorial-item");
+      try {
+        const res = await fetch("/api/editorial/done", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, done: box.checked }),
+        });
+        if (!res.ok) throw new Error("editorial mark");
+        const data = await res.json();
+        if (card) {
+          card.classList.toggle("is-done", Boolean(data.done));
+          card.classList.toggle("is-new", Boolean(data.is_new));
+          const badge = card.querySelector(".editorial-badge");
+          if (badge) {
+            badge.className = `editorial-badge badge-${data.badge_kind || "old"}`;
+            const age = data.age ? ` · ${data.age}` : "";
+            badge.textContent = `${data.badge || ""}${age}`;
+          }
+        }
+        toast(box.checked ? "Позначено як запощено" : "Повернуто в чергу");
+      } catch (err) {
+        box.checked = !box.checked;
+        toast("Не вдалось зберегти позначку", false);
+      }
     });
   });
   document.querySelectorAll("[data-share-carousel]").forEach((btn) => {
@@ -338,7 +368,16 @@
         });
         if (!res.ok) throw new Error("subscribe");
         btn.textContent = "Сповіщення ✓";
-        toast("Сповіщення увімкнено");
+        const testRes = await fetch("/api/push/test", {
+          method: "POST",
+          credentials: "same-origin",
+        });
+        const testBody = testRes.ok ? await testRes.json() : {};
+        if (testRes.ok && (testBody.sent || 0) > 0) {
+          toast("Тест-пуш надіслано — перевір телефон/ноут");
+        } else {
+          toast("Підписка збережена, але тест-пуш не пішов", false);
+        }
       } catch (err) {
         toast("Не вдалось увімкнути сповіщення", false);
       }

@@ -19,8 +19,9 @@ from src.content.news_filter import (
     passes_telegram_filter,
 )
 from src.publishers.telegram_publisher import TelegramPublisher
+from src.paths import coin_wire_storage
 
-STATE_FILE = Path("data/storage/coin_wire/telegram_daily_state.json")
+STATE_FILE = coin_wire_storage() / "telegram_daily_state.json"
 
 
 @dataclass

@@ -9,12 +9,32 @@ from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 from src.content import editorial_copy
-from src.content.editorial_log import append_event, events_since, format_events_list
-from src.desk.catalog import load_editorial_items, write_editorial_items
+from src.content.editorial_log import append_event, events_since, format_events_list, load_log
+from src.content.story_dedupe import titles_similar
+from src.desk.catalog import _raw_editorial_items, load_editorial_items, write_editorial_items
 from src.publishers.telegram_publisher import TelegramPublisher
 from src.publishers.threads_publisher import ThreadsPublisher
 
-STATE_FILE = Path("data/storage/coin_wire/editorial_weekly_state.json")
+from src.paths import coin_wire_storage
+
+STATE_FILE = coin_wire_storage() / "editorial_weekly_state.json"
+
+
+def _story_editorial_done(title: str) -> bool:
+    """True if desk already has (or recently logged) copy for this story."""
+    title = (title or "").strip()
+    if not title:
+        return False
+    for item in load_editorial_items():
+        text = str(item.get("text") or "")
+        if text and titles_similar(title, text[:220]):
+            return True
+    for event in load_log()[-60:]:
+        if event.get("kind") in {"opinion", "question", "context"} and titles_similar(
+            title, str(event.get("title") or "")
+        ):
+            return True
+    return False
 
 
 def _week_key(tz_name: str) -> str:
@@ -59,9 +79,23 @@ def _push_desk_item(kind: str, label: str, text: str) -> None:
     text = (text or "").strip()
     if not text:
         return
-    items = load_editorial_items()
-    items.insert(0, {"kind": kind, "label": label, "text": text})
-    write_editorial_items(items)
+    import hashlib
+    from datetime import datetime, timezone
+
+    raw = _raw_editorial_items()
+    item_id = "e-" + hashlib.sha1(f"{kind}:{text}".encode("utf-8")).hexdigest()[:10]
+    raw.insert(
+        0,
+        {
+            "id": item_id,
+            "kind": kind,
+            "label": label,
+            "text": text,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "done": False,
+        },
+    )
+    write_editorial_items(raw)
     try:
         from src.desk.push import notify_desk_push
         from src.publishers.owner_notify import format_desk_editorial_ready
@@ -99,11 +133,21 @@ def after_telegram_post(
     state = _load_state(tz_name)
     queued: list[str] = []
     article = {**article, "tier": tier}
+    title = str(article.get("title") or "")
+    if _story_editorial_done(title):
+        return {"queued": [], "skipped": "story_already_covered"}
 
     if tier == "breaking" and cfg.get("context_on_breaking", True) and state.get("context", 0) < 4:
         text = editorial_copy.telegram_context(article)
         if text:
             _push_desk_item("context", "Telegram — контекст", text)
+            append_event(
+                kind="context",
+                title=title,
+                summary=str(article.get("summary") or ""),
+                tier=tier,
+                article_hash=str(article.get("hash") or ""),
+            )
             state["context"] = int(state.get("context", 0)) + 1
             queued.append("context")
 
@@ -115,12 +159,26 @@ def after_telegram_post(
         text = editorial_copy.opinion_hook(article)
         if text:
             _push_desk_item("opinion", "Threads — opinion hook", text)
+            append_event(
+                kind="opinion",
+                title=title,
+                summary=str(article.get("summary") or ""),
+                tier=tier,
+                article_hash=str(article.get("hash") or ""),
+            )
             state["opinion"] = int(state.get("opinion", 0)) + 1
             queued.append("opinion")
     elif state.get("question", 0) < question_cap and tier in {"strong", "breaking", "insight"}:
         text = editorial_copy.question_post(article)
         if text:
             _push_desk_item("question", "Threads — питання", text)
+            append_event(
+                kind="question",
+                title=title,
+                summary=str(article.get("summary") or ""),
+                tier=tier,
+                article_hash=str(article.get("hash") or ""),
+            )
             state["question"] = int(state.get("question", 0)) + 1
             queued.append("question")
 

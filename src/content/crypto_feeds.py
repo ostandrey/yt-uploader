@@ -22,6 +22,8 @@ from src.content.news_filter import (
     passes_telegram_filter,
     score_article,
 )
+from src.content.story_dedupe import story_fingerprint, titles_similar
+from src.paths import coin_wire_storage
 
 CRYPTO_FEEDS = {
     "coindesk": "https://www.coindesk.com/arc/outboundfeeds/rss/",
@@ -54,8 +56,8 @@ class CryptoNewsFetcher:
         telegram_max_age_hours: int = 48,
     ):
         self.feeds = feeds or CRYPTO_FEEDS
-        self.posted_cache_path = posted_cache_path or Path(
-            "data/storage/coin_wire/posted_articles.json"
+        self.posted_cache_path = posted_cache_path or (
+            coin_wire_storage() / "posted_articles.json"
         )
         self.short_min_score = short_min_score
         self.telegram_min_score = telegram_min_score
@@ -63,27 +65,95 @@ class CryptoNewsFetcher:
         self.telegram_max_age_hours = telegram_max_age_hours
         self.posted_cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def _load_posted(self) -> set[str]:
+    def _load_posted_payload(self) -> dict:
         if not self.posted_cache_path.exists():
-            return set()
+            return {"hashes": [], "fingerprints": [], "titles": []}
         try:
             data = json.loads(self.posted_cache_path.read_text(encoding="utf-8"))
-            return set(data.get("hashes", []))
-        except (json.JSONDecodeError, OSError):
-            return set()
+            if not isinstance(data, dict):
+                return {"hashes": [], "fingerprints": [], "titles": []}
+            return {
+                "hashes": list(data.get("hashes") or []),
+                "fingerprints": list(data.get("fingerprints") or []),
+                "titles": list(data.get("titles") or []),
+            }
+        except (json.JSONDecodeError, OSError, TypeError):
+            return {"hashes": [], "fingerprints": [], "titles": []}
 
-    def _save_posted(self, hashes: set[str]) -> None:
-        trimmed = list(hashes)[-500:]
-        payload = {"hashes": trimmed, "updated": datetime.utcnow().isoformat()}
+    def _load_posted(self) -> set[str]:
+        return set(self._load_posted_payload()["hashes"])
+
+    def _save_posted_payload(self, payload: dict) -> None:
+        hashes = list(dict.fromkeys(payload.get("hashes") or []))[-500:]
+        fingerprints = list(dict.fromkeys(payload.get("fingerprints") or []))[-500:]
+        titles = list(payload.get("titles") or [])[-200:]
+        body = {
+            "hashes": hashes,
+            "fingerprints": fingerprints,
+            "titles": titles,
+            "updated": datetime.utcnow().isoformat(),
+        }
         self.posted_cache_path.write_text(
-            json.dumps(payload, indent=2),
+            json.dumps(body, indent=2),
             encoding="utf-8",
         )
 
+    def _save_posted(self, hashes: set[str]) -> None:
+        payload = self._load_posted_payload()
+        payload["hashes"] = list(hashes)
+        self._save_posted_payload(payload)
+
+    def is_duplicate_story(self, article: Dict, posted_hashes: set[str] | None = None) -> bool:
+        """True if same hash, fingerprint, or near-duplicate title was already posted."""
+        payload = self._load_posted_payload()
+        hashes = posted_hashes if posted_hashes is not None else set(payload["hashes"])
+        article_hash = article.get("hash") or ""
+        if article_hash and article_hash in hashes:
+            return True
+        fp = article.get("fingerprint") or story_fingerprint(
+            str(article.get("title") or ""),
+            str(article.get("link") or ""),
+        )
+        if fp and fp in set(payload["fingerprints"]):
+            return True
+        title = str(article.get("title") or "")
+        for prev in payload["titles"]:
+            prev_title = prev if isinstance(prev, str) else str((prev or {}).get("title") or "")
+            if prev_title and titles_similar(title, prev_title):
+                return True
+        return False
+
     def mark_posted(self, article: Dict) -> None:
-        posted = self._load_posted()
-        posted.add(article["hash"])
-        self._save_posted(posted)
+        payload = self._load_posted_payload()
+        article_hash = article.get("hash") or _article_hash(
+            str(article.get("title") or ""),
+            str(article.get("link") or ""),
+        )
+        fp = article.get("fingerprint") or story_fingerprint(
+            str(article.get("title") or ""),
+            str(article.get("link") or ""),
+        )
+        title = str(article.get("title") or "").strip()
+        hashes = set(payload["hashes"])
+        hashes.add(article_hash)
+        fingerprints = set(payload["fingerprints"])
+        fingerprints.add(fp)
+        titles = list(payload["titles"])
+        titles.append(
+            {
+                "title": title,
+                "fingerprint": fp,
+                "hash": article_hash,
+                "at": datetime.utcnow().isoformat(),
+            }
+        )
+        self._save_posted_payload(
+            {
+                "hashes": list(hashes),
+                "fingerprints": list(fingerprints),
+                "titles": titles,
+            }
+        )
 
     def _fetch_feed(self, source: str, url: str, max_age_days: int = 3) -> List[Dict]:
         feed = feedparser.parse(url)
@@ -108,6 +178,7 @@ class CryptoNewsFetcher:
                 "link": link,
                 "source": source,
                 "hash": _article_hash(title, link),
+                "fingerprint": story_fingerprint(title, link),
                 "published": published,
                 "score": 0,
             })
@@ -138,13 +209,13 @@ class CryptoNewsFetcher:
         if for_short:
             fresh = [
                 a for a in all_articles
-                if a["hash"] not in posted
+                if not self.is_duplicate_story(a, posted)
                 and passes_short_filter(a, self.short_min_score, self.short_max_age_hours)
             ]
         else:
             fresh = [
                 a for a in all_articles
-                if a["hash"] not in posted
+                if not self.is_duplicate_story(a, posted)
                 and passes_telegram_filter(a, self.telegram_min_score, self.telegram_max_age_hours)
             ]
 
@@ -154,6 +225,8 @@ class CryptoNewsFetcher:
         seen: set[str] = set()
         for article in fresh:
             if article["hash"] in seen:
+                continue
+            if any(titles_similar(article["title"], u["title"]) for u in unique):
                 continue
             seen.add(article["hash"])
             unique.append(article)
@@ -169,8 +242,8 @@ class CryptoNewsFetcher:
 
         candidates = [
             a for a in all_articles
-            if a["hash"] not in posted
-            and a["hash"] not in skip
+            if a["hash"] not in skip
+            and not self.is_duplicate_story(a, posted)
             and passes_short_filter(a, self.short_min_score, self.short_max_age_hours)
         ]
         candidates.sort(key=lambda a: a["score"], reverse=True)
