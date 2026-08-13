@@ -17,7 +17,7 @@
   <main>
     {% if snap.storage_warn %}
     <div class="warn-banner">
-      Дані порожні — на Railway змонтуй volume <code>/app/data</code>. Без нього історія, Shorts і push-підписки згорають після деплою.
+      Немає persistent volume. Railway → сервіс → Volumes → Mount path <code>/app/data</code> → Redeploy. Інакше історія згорає.
     </div>
     {% endif %}
 

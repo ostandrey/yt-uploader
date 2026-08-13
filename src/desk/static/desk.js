@@ -485,6 +485,39 @@
         "iPhone: відкрий desk з іконки Home Screen. З вкладки Safari система push не дає.";
     }
 
+    async function syncSubscription() {
+      if (isIos() && !isStandalone) return null;
+      if (!window.Notification || Notification.permission !== "granted") return null;
+      const keyRes = await fetch("/api/push/public-key", { credentials: "same-origin" });
+      if (!keyRes.ok) throw new Error("key");
+      const { publicKey } = await keyRes.json();
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      const known = localStorage.getItem("cw-vapid-public") || "";
+      if (!sub || known !== publicKey) {
+        if (sub) {
+          try {
+            await sub.unsubscribe();
+          } catch (err) {
+            /* continue */
+          }
+        }
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+        localStorage.setItem("cw-vapid-public", publicKey);
+      }
+      const res = await fetch("/api/push/subscribe", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub.toJSON()),
+      });
+      if (!res.ok) throw new Error("subscribe");
+      return sub;
+    }
+
     async function refreshLabel() {
       try {
         const reg = await navigator.serviceWorker.ready;
@@ -525,6 +558,18 @@
     }
 
     await refreshLabel();
+    if (Notification.permission === "granted" && !(isIos() && !isStandalone)) {
+      try {
+        await syncSubscription();
+        await refreshLabel();
+        if (statusText && btn.dataset.mode === "test") {
+          statusText.textContent =
+            "Web Push підписаний. Після деплою підписка оновлюється, коли відкриваєш Desk.";
+        }
+      } catch (syncErr) {
+        console.warn(syncErr);
+      }
+    }
 
     btn.addEventListener("click", async () => {
       try {
@@ -541,6 +586,19 @@
           }
           return;
         }
+        let localOk = false;
+        try {
+          if (window.Notification) {
+            new Notification("Coin Wire", {
+              body: "Локальний тест браузера",
+              icon: "/static/icon-192.png",
+              tag: "coin-wire-local-test",
+            });
+            localOk = true;
+          }
+        } catch (pageErr) {
+          console.warn(pageErr);
+        }
         try {
           const regLocal = await navigator.serviceWorker.ready;
           await regLocal.showNotification("Coin Wire local test", {
@@ -549,58 +607,38 @@
             badge: "/static/icon-192.png",
             tag: "coin-wire-local-test",
           });
+          localOk = true;
         } catch (localErr) {
           console.error(localErr);
+        }
+        if (!localOk && isIos()) {
           toast("Локальні сповіщення не працюють у цій PWA", false);
           return;
         }
-        const keyRes = await fetch("/api/push/public-key", { credentials: "same-origin" });
-        if (!keyRes.ok) throw new Error("key");
-        const { publicKey } = await keyRes.json();
-        const reg = await navigator.serviceWorker.ready;
-        let sub = await reg.pushManager.getSubscription();
-        // Don't rotate the iOS subscription on every test — that yields 410.
-        if (btn.dataset.mode !== "test" || !sub) {
-          if (sub) {
-            try {
-              await sub.unsubscribe();
-            } catch (err) {
-              /* continue */
-            }
-          }
-          sub = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(publicKey),
-          });
-        }
-        const res = await fetch("/api/push/subscribe", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(sub.toJSON()),
-        });
-        if (!res.ok) throw new Error("subscribe");
+        await syncSubscription();
         const testRes = await fetch("/api/push/test", {
           method: "POST",
           credentials: "same-origin",
         });
         const testBody = testRes.ok ? await testRes.json() : {};
         await refreshLabel();
-        if (testRes.ok && (testBody.sent || 0) > 0) {
-          toast("Серверний push OK — має бути друге сповіщення");
-          if (statusText) {
-            statusText.textContent =
-              "Працює: локальне + серверне. Якщо бачиш лише перше — iOS ще не прийняв remote push.";
-          }
-        } else {
-          const why = testBody.reason || "unknown";
+        const tg = testBody.telegram || {};
+        const webOk = testRes.ok && (testBody.sent || 0) > 0;
+        if (tg.sent) toast("Telegram ping надіслано");
+        if (webOk) toast("Серверний push OK — має бути ще одне сповіщення");
+        if (!webOk && !tg.sent) {
+          const why = testBody.reason || tg.reason || "unknown";
           const err = (testBody.errors && testBody.errors[0]) || "";
-          toast(`Push з сервера ні: ${why}`, false);
-          if (statusText) {
-            statusText.textContent =
-              `Підписка збережена, але сервер не доставив (${why}${err ? ": " + err : ""}). ` +
-              `Підписок на сервері: ${(testBody.status && testBody.status.subs) || testBody.subs || 0}.`;
-          }
+          toast(`Ні Web Push, ні Telegram (${why})`, false);
+        }
+        if (statusText) {
+          const webLine = webOk
+            ? "Web Push: ок"
+            : `Web Push: ні (${testBody.reason || "fail"}${(testBody.errors && testBody.errors[0]) ? " · " + testBody.errors[0] : ""})`;
+          const tgLine = tg.sent
+            ? "Telegram: ок"
+            : `Telegram: ні (${tg.reason || "немає відповіді"})`;
+          statusText.textContent = `${webLine}. ${tgLine}. Підписок: ${(testBody.status && testBody.status.subs) || testBody.subs || 0}.`;
         }
       } catch (err) {
         console.error(err);

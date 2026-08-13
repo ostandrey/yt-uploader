@@ -18,7 +18,9 @@
 
   {% if storage_warn %}
   <div class="warn-banner">
-    Railway volume не змонтований на <code>/app/data</code> — після деплою історія згорить.
+    Немає persistent volume на <code>/app/data</code>.
+    У Railway: сервіс → <b>Volumes</b> → Add → Mount path <code>/app/data</code> → Redeploy.
+    Токени YouTube лишай на окремому <code>/app/tokens</code>.
   </div>
   {% endif %}
 
@@ -27,7 +29,7 @@
       <h2>Сповіщення</h2>
       <p id="push-status-text">
         {% if push_enabled %}
-        Ping, коли Short або текст готові.
+        Один раз «Увімкнути». Після деплою просто відкрий Desk — підписка оновиться сама. Telegram і так пише.
         {% else %}
         Push на сервері ще не готовий.
         {% endif %}

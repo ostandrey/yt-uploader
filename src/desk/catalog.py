@@ -72,11 +72,15 @@ def write_desk_pack(
     try:
         from src.desk.push import notify_desk_push
 
-        notify_desk_push(
+        pushed = notify_desk_push(
             "Short ready",
             "TikTok · IG Reel · carousel on desk",
             url="/?tab=tiktok",
             tag="cw-desk-short",
+        )
+        print(
+            f"Desk web push (short): reason={pushed.get('reason')} "
+            f"sent={pushed.get('sent')} subs={pushed.get('subs')}"
         )
     except Exception as exc:
         print(f"Desk push notify failed: {exc}")

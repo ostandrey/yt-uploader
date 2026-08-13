@@ -150,6 +150,7 @@ def health():
         "desk": auth.enabled(),
         "storage": status,
         "push": push.push_status(),
+        "owner_telegram": bool(os.getenv("TELEGRAM_CHAT_ID", "").strip()),
     }
 
 
@@ -387,6 +388,21 @@ def api_push_test(request: Request):
         url="/",
         tag="coin-wire-server-test",
     )
+    telegram = {"sent": False, "reason": "skipped"}
+    try:
+        from src.publishers.telegram_publisher import TelegramPublisher
+
+        tg = TelegramPublisher()
+        if not tg.notify_chat_id:
+            telegram["reason"] = "TELEGRAM_CHAT_ID missing on Railway"
+        elif not tg.bot_token:
+            telegram["reason"] = "TELEGRAM_BOT_TOKEN missing"
+        else:
+            tg.notify_owner("Desk test · Telegram ping живий")
+            telegram = {"sent": True, "reason": "ok"}
+    except Exception as exc:
+        telegram = {"sent": False, "reason": str(exc)[:180]}
+    result["telegram"] = telegram
     result["status"] = push.push_status()
     return JSONResponse(result)
 

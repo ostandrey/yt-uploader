@@ -100,11 +100,15 @@ def _push_desk_item(kind: str, label: str, text: str) -> None:
         from src.desk.push import notify_desk_push
         from src.publishers.owner_notify import desk_deep_link, format_desk_editorial_ready
 
-        notify_desk_push(
+        pushed = notify_desk_push(
             "Desk ready",
             format_desk_editorial_ready(kind=kind, item_id=item_id),
             url=desk_deep_link(kind=kind, item_id=item_id),
             tag=f"cw-desk-{item_id}",
+        )
+        print(
+            f"Desk web push: reason={pushed.get('reason')} "
+            f"sent={pushed.get('sent')} subs={pushed.get('subs')}"
         )
     except Exception as exc:
         print(f"Desk push (editorial) failed: {exc}")

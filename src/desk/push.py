@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 STORAGE = coin_wire_storage()
 VAPID_FILE = STORAGE / "desk_vapid.json"
 SUBS_FILE = STORAGE / "desk_push_subs.json"
+LAST_FILE = STORAGE / "desk_push_last.json"
 
 _lock = threading.RLock()
 
@@ -31,7 +33,7 @@ def public_key() -> str:
 
 
 def _private_key() -> str:
-    return str(_ensure_vapid().get("privateKey") or "")
+    return _pad_b64(str(_ensure_vapid().get("privateKey") or ""))
 
 
 def _subject() -> str:
@@ -70,6 +72,11 @@ def subscription_debug_info(subscription: dict[str, Any]) -> dict[str, Any]:
 
 def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _pad_b64(value: str) -> str:
+    raw = (value or "").strip()
+    return raw + ("=" * ((4 - len(raw) % 4) % 4))
 
 
 def _generate_vapid() -> dict[str, str]:
@@ -179,7 +186,27 @@ def vapid_source() -> str:
     return "generated"
 
 
+def _remember_last(result: dict[str, Any]) -> None:
+    payload = {
+        **result,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        STORAGE.mkdir(parents=True, exist_ok=True)
+        LAST_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except OSError as exc:
+        log.warning("Push last-result persist failed: %s", exc)
+
+
 def push_status() -> dict[str, Any]:
+    last: dict[str, Any] = {}
+    if LAST_FILE.exists():
+        try:
+            loaded = json.loads(LAST_FILE.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                last = loaded
+        except (OSError, json.JSONDecodeError, TypeError):
+            last = {}
     return {
         "configured": push_configured(),
         "subs": len(load_subscriptions()),
@@ -188,6 +215,13 @@ def push_status() -> dict[str, Any]:
         "subs_file": SUBS_FILE.exists(),
         "storage": str(STORAGE),
         "subject": _subject(),
+        "last": {
+            "reason": last.get("reason"),
+            "sent": last.get("sent"),
+            "failed": last.get("failed"),
+            "ts": last.get("ts"),
+            "errors": last.get("errors") or [],
+        },
     }
 
 
@@ -200,15 +234,22 @@ def notify_desk_push(
 ) -> dict[str, Any]:
     """Send Web Push to all desk subscribers. No-op if not configured."""
     if not push_configured():
-        return {"sent": 0, "failed": 0, "reason": "push_disabled", "errors": []}
+        result = {"sent": 0, "failed": 0, "reason": "push_disabled", "errors": []}
+        _remember_last(result)
+        return result
     try:
         from pywebpush import webpush
     except ImportError:
-        return {"sent": 0, "failed": 0, "reason": "pywebpush_missing", "errors": []}
+        result = {"sent": 0, "failed": 0, "reason": "pywebpush_missing", "errors": []}
+        _remember_last(result)
+        return result
 
     subs = load_subscriptions()
     if not subs:
-        return {"sent": 0, "failed": 0, "reason": "no_subscriptions", "errors": []}
+        result = {"sent": 0, "failed": 0, "reason": "no_subscriptions", "errors": []}
+        _remember_last(result)
+        log.warning("Web Push skipped: no subscriptions at %s", SUBS_FILE)
+        return result
 
     payload = json.dumps(
         {
@@ -231,6 +272,7 @@ def notify_desk_push(
                 vapid_private_key=_private_key(),
                 vapid_claims={"sub": _subject()},
                 ttl=86400,
+                timeout=20,
                 headers={"Urgency": "high"},
             )
             status = getattr(response, "status_code", None) or 201
@@ -257,7 +299,7 @@ def notify_desk_push(
                 errors.append(f"gone:{status or '4xx'}")
             else:
                 errors.append(f"{status or 'err'}:{msg[:120]}")
-    return {
+    result = {
         "sent": sent,
         "failed": failed,
         "reason": "ok" if sent else "all_failed",
@@ -265,3 +307,5 @@ def notify_desk_push(
         "subs": len(subs),
         "vapid_source": vapid_source(),
     }
+    _remember_last(result)
+    return result

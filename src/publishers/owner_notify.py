@@ -199,6 +199,9 @@ def notify_owner_status(
         publisher.notify_owner(body, buttons=buttons)
     except Exception as exc:
         print(f"Owner status notify failed: {exc}")
+        import logging
+
+        logging.getLogger(__name__).warning("Owner Telegram ping failed: %s", exc)
 
 
 # Backward-compatible aliases (tests / older imports)
