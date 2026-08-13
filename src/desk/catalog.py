@@ -389,6 +389,17 @@ def history_page() -> dict[str, Any]:
     }
 
 
+def desk_stamp() -> dict[str, Any]:
+    latest = load_latest() or {}
+    editorial = load_editorial_items(scope="today")
+    return {
+        "editorial": len(editorial),
+        "open": sum(1 for item in editorial if not item.get("done")),
+        "latest_at": str(latest.get("updated_at") or ""),
+        "newest": str((editorial[0] or {}).get("created_at") or "") if editorial else "",
+    }
+
+
 def write_editorial_items(items: list[dict[str, Any]]) -> None:
     STORAGE.mkdir(parents=True, exist_ok=True)
     now = _now()

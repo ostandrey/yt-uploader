@@ -202,6 +202,18 @@ def notify_owner_status(
         import logging
 
         logging.getLogger(__name__).warning("Owner Telegram ping failed: %s", exc)
+    try:
+        from src.desk.push import notify_desk_push
+
+        first = cleaned[0]
+        notify_desk_push(
+            "Coin Wire",
+            first[:160],
+            url=desk_deep_link(kind="threads") if "Threads" in body else desk_deep_link(kind="telegram") if "TG" in body else "/",
+            tag="cw-desk-owner",
+        )
+    except Exception as exc:
+        print(f"Owner web push failed: {exc}")
 
 
 # Backward-compatible aliases (tests / older imports)

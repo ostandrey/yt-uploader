@@ -55,7 +55,9 @@ class SecurityHeaders(BaseHTTPMiddleware):
         response = await call_next(request)
         for key, value in SECURITY_HEADERS.items():
             response.headers.setdefault(key, value)
-        if request.url.path.startswith("/static/"):
+        if request.url.path.startswith("/static/desk.js") or request.url.path.startswith("/sw.js"):
+            response.headers["Cache-Control"] = "no-store"
+        elif request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "public, max-age=3600"
         elif request.url.path.startswith("/media/"):
             response.headers["Cache-Control"] = "private, no-store"
@@ -346,6 +348,13 @@ def media_thumb(request: Request):
     if not path:
         raise HTTPException(404, "no thumb")
     return FileResponse(path, media_type="image/jpeg")
+
+
+@app.get("/api/desk/stamp")
+def api_desk_stamp(request: Request):
+    if not _authed(request):
+        raise HTTPException(401, "auth required")
+    return JSONResponse(catalog.desk_stamp())
 
 
 @app.get("/api/push/public-key")

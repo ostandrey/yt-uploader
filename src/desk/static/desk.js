@@ -30,6 +30,32 @@
     });
   }
 
+  const pageStamp = {
+    editorial: document.querySelectorAll("[data-editorial-id]").length,
+    newest: "",
+  };
+  function reloadDesk() {
+    const url = new URL(window.location.href);
+    url.searchParams.set("r", String(Date.now()));
+    window.location.replace(url.toString());
+  }
+  async function checkStamp() {
+    try {
+      const res = await fetch("/api/desk/stamp", { credentials: "same-origin" });
+      if (!res.ok) return;
+      const stamp = await res.json();
+      const more = Number(stamp.editorial || 0) > pageStamp.editorial;
+      if (more) reloadDesk();
+      pageStamp.newest = stamp.newest || pageStamp.newest;
+    } catch (err) {
+      /* ignore */
+    }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkStamp();
+  });
+  window.setInterval(checkStamp, 20000);
+
   function toast(msg, ok = true) {
     if (!toastEl) return;
     toastEl.textContent = msg;
@@ -485,13 +511,26 @@
         "iPhone: відкрий desk з іконки Home Screen. З вкладки Safari система push не дає.";
     }
 
+    async function ensureRegistration() {
+      if (!("serviceWorker" in navigator)) throw new Error("no sw");
+      let reg = await navigator.serviceWorker.getRegistration("/");
+      if (!reg) {
+        reg = await navigator.serviceWorker.register("/sw.js", {
+          scope: "/",
+          updateViaCache: "none",
+        });
+      }
+      if (reg.waiting) await reg.waiting.postMessage({ type: "skip" });
+      return reg;
+    }
+
     async function syncSubscription() {
       if (isIos() && !isStandalone) return null;
       if (!window.Notification || Notification.permission !== "granted") return null;
       const keyRes = await fetch("/api/push/public-key", { credentials: "same-origin" });
       if (!keyRes.ok) throw new Error("key");
       const { publicKey } = await keyRes.json();
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await ensureRegistration();
       let sub = await reg.pushManager.getSubscription();
       const known = localStorage.getItem("cw-vapid-public") || "";
       if (!sub || known !== publicKey) {
@@ -520,7 +559,7 @@
 
     async function refreshLabel() {
       try {
-        const reg = await navigator.serviceWorker.ready;
+        const reg = await ensureRegistration();
         const existing = await reg.pushManager.getSubscription();
         if (existing) {
           btn.textContent = "Надіслати тест";
@@ -580,36 +619,20 @@
           }
           return;
         }
-        let localOk = false;
         try {
-          if (window.Notification) {
-            new Notification("Coin Wire", {
-              body: "Локальний тест браузера",
-              icon: "/static/icon-192.png",
-              tag: "coin-wire-local-test",
-            });
-            localOk = true;
-          }
+          new Notification("Coin Wire", {
+            body: "Локальний тест браузера",
+            icon: "/static/icon-192.png",
+            tag: "coin-wire-local-test",
+          });
         } catch (pageErr) {
           console.warn(pageErr);
         }
-        try {
-          const regLocal = await navigator.serviceWorker.ready;
-          await regLocal.showNotification("Coin Wire local test", {
-            body: "Local notification works",
-            icon: "/static/icon-192.png",
-            badge: "/static/icon-192.png",
-            tag: "coin-wire-local-test",
-          });
-          localOk = true;
-        } catch (localErr) {
-          console.error(localErr);
-        }
-        if (!localOk && isIos()) {
-          toast("Локальні сповіщення не працюють у цій PWA", false);
-          return;
-        }
-        await syncSubscription();
+        toast("Локальний тест пішов. Підписую сервер…");
+        const subWait = new Promise((_, reject) => {
+          window.setTimeout(() => reject(new Error("підписка зависла >12с")), 12000);
+        });
+        await Promise.race([syncSubscription(), subWait]);
         const testRes = await fetch("/api/push/test", {
           method: "POST",
           credentials: "same-origin",
@@ -622,16 +645,13 @@
         if (webOk) toast("Серверний push OK — має бути ще одне сповіщення");
         if (!webOk && !tg.sent) {
           const why = testBody.reason || tg.reason || "unknown";
-          const err = (testBody.errors && testBody.errors[0]) || "";
-          toast(`Ні Web Push, ні Telegram (${why})`, false);
+          toast(`Серверний push ні (${why}). Локальний тест уже був.`, false);
         }
         if (statusText) {
           const webLine = webOk
             ? "Web Push: ок"
-            : `Web Push: ні (${testBody.reason || "fail"}${(testBody.errors && testBody.errors[0]) ? " · " + testBody.errors[0] : ""})`;
-          const tgLine = tg.sent
-            ? "Telegram: ок"
-            : `Telegram: ні (${tg.reason || "немає відповіді"})`;
+            : `Web Push: ні (${testBody.reason || "fail"})`;
+          const tgLine = tg.sent ? "Telegram: ок" : `Telegram: ні (${tg.reason || "—"})`;
           statusText.textContent = `${webLine}. ${tgLine}. Підписок: ${(testBody.status && testBody.status.subs) || testBody.subs || 0}.`;
         }
       } catch (err) {
