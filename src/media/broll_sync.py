@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
@@ -26,6 +27,9 @@ log = logging.getLogger(__name__)
 SKIP_DIR_NAMES = {"_rejected", "_qa_work", "_clip_work"}
 SYNC_SUFFIXES = {".mp4", ".meta.json", ".json"}
 DEFAULT_PREFIX = "broll_library"
+# Hobby Railway volume is 5 GB — never fill it with the full R2 library.
+_MIN_FREE_BYTES = 800 * 1024 * 1024
+_MAX_USED_RATIO = 0.80
 
 
 @dataclass
@@ -190,6 +194,7 @@ def download_library(
     downloaded = 0
     skipped = 0
     bytes_down = 0
+    stopped_disk = False
 
     for key, size in sorted(remote.items()):
         rel = key[len(cfg.prefix.rstrip("/")) + 1 :]
@@ -199,6 +204,17 @@ def download_library(
         if dest.exists() and dest.stat().st_size == size:
             skipped += 1
             continue
+        usage = shutil.disk_usage(cfg.library_root)
+        used_ratio = usage.used / max(usage.total, 1)
+        if usage.free < _MIN_FREE_BYTES or used_ratio >= _MAX_USED_RATIO:
+            log.warning(
+                "B-roll download stopped: disk %.0f%% used, %.1f GB free "
+                "(keep room for desk history / Shorts)",
+                used_ratio * 100,
+                usage.free / (1024**3),
+            )
+            stopped_disk = True
+            break
         log.info("Download s3://%s/%s → %s (%s MB)", cfg.bucket, key, dest, round(size / 1e6, 1))
         if dry_run:
             downloaded += 1
@@ -219,6 +235,7 @@ def download_library(
         "prefix": cfg.prefix,
         "dry_run": dry_run,
         "library": str(cfg.library_root),
+        "stopped_disk": stopped_disk,
     }
 
 
