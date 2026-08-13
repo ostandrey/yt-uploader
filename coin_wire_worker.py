@@ -206,9 +206,15 @@ def main() -> None:
     storage_cfg = automation.get("storage", {})
     retention_days = int(storage_cfg.get("retention_days", 7))
 
-    from src.storage_cleanup import cleanup_old_media
+    from src.storage_cleanup import cleanup_old_media, prune_broll_library
 
     cleanup_old_media(retention_days=retention_days)
+    try:
+        pruned = prune_broll_library()
+        if pruned.get("pruned"):
+            log.info("Freed %s MB by dropping B-roll cache on volume", pruned.get("freed_mb"))
+    except Exception as exc:
+        log.warning("B-roll prune skipped: %s", exc)
 
     schedule_cfg = automation.get("schedule", {})
     timezone = automation.get("timezone", "UTC")

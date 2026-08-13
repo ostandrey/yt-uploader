@@ -557,32 +557,26 @@
       }
     }
 
-    await refreshLabel();
-    if (Notification.permission === "granted" && !(isIos() && !isStandalone)) {
-      try {
-        await syncSubscription();
-        await refreshLabel();
-        if (statusText && btn.dataset.mode === "test") {
-          statusText.textContent =
-            "Web Push підписаний. Після деплою підписка оновлюється, коли відкриваєш Desk.";
-        }
-      } catch (syncErr) {
-        console.warn(syncErr);
-      }
-    }
-
     btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      const prev = btn.textContent;
+      btn.textContent = "…";
       try {
         if (isIos() && !isStandalone) {
           toast("Спочатку відкрий desk з Home Screen", false);
           return;
         }
+        if (!window.Notification) {
+          toast("Цей браузер не вміє сповіщення", false);
+          return;
+        }
+        toast("Запитую дозвіл у браузера…");
         const perm = await Notification.requestPermission();
         if (perm !== "granted") {
-          toast("Дозвіл на сповіщення відхилено", false);
+          toast("Дозвіл відхилено. Chrome → значок замка біля адреси → Notifications → Allow", false);
           if (statusText) {
             statusText.textContent =
-              "Браузер заблокував сповіщення. Увімкни їх у налаштуваннях сайту і натисни знову.";
+              "Браузер заблокував сповіщення. Замок біля URL → Notifications → Allow, тоді знову Увімкнути.";
           }
           return;
         }
@@ -643,8 +637,25 @@
       } catch (err) {
         console.error(err);
         toast("Не вдалось увімкнути сповіщення", false);
+        if (statusText) statusText.textContent = String(err && err.message ? err.message : err);
+      } finally {
+        btn.disabled = false;
+        if (btn.dataset.mode !== "test") btn.textContent = prev || "Увімкнути";
       }
     });
+
+    refreshLabel()
+      .then(async () => {
+        if (Notification.permission === "granted" && !(isIos() && !isStandalone)) {
+          try {
+            await syncSubscription();
+            await refreshLabel();
+          } catch (syncErr) {
+            console.warn(syncErr);
+          }
+        }
+      })
+      .catch((err) => console.warn(err));
   }
 
   setupTabs();

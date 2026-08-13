@@ -118,6 +118,22 @@ def cleanup_old_media(
     return summary
 
 
+def prune_broll_library(*, root: Path | None = None) -> dict:
+    """Drop synced B-roll off the volume so desk/history keep disk room.
+
+    Shorts still fetch Pexels/Pixabay live. History SQLite is not touched.
+    """
+    from src.paths import data_root
+
+    library = (root or data_root()) / "assets" / "broll_library"
+    if not library.is_dir():
+        return {"pruned": False, "reason": "no_library"}
+    size = _dir_size(library)
+    shutil.rmtree(library, ignore_errors=True)
+    log.info("Pruned B-roll library %s (%s)", library, _fmt_mb(size))
+    return {"pruned": True, "freed_bytes": size, "freed_mb": round(size / (1024 * 1024), 1)}
+
+
 def main() -> None:
     import argparse
 

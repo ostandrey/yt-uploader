@@ -247,8 +247,8 @@ def ensure_library_on_start(
     Called by worker. If S3 is configured and local library is thin / empty,
     pull missing objects. No-op when sync env missing.
     """
-    flag = os.getenv("BROLL_SYNC_ON_START", "1").strip().lower()
-    if flag in ("0", "false", "no", "off"):
+    flag = os.getenv("BROLL_SYNC_ON_START", "0").strip().lower()
+    if flag in ("0", "false", "no", "off", ""):
         return None
     cfg = SyncConfig.from_env()
     if not cfg:
