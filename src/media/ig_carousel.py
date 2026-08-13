@@ -1,35 +1,54 @@
-"""Instagram 4:5 carousel — Glassdark What Moved. Operator does not design slides."""
+"""Instagram 4:5 carousel — four type-only What Moved slides."""
 
 from __future__ import annotations
 
 import re
-import textwrap
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+from PIL import Image, ImageDraw
 
 from src.content.naturalize import naturalize_text
 from src.media.fonts import ascii_safe, load_font
-from src.media.instagram_feed_image import pick_stock_keywords
-from src.media.stock_image_fetcher import StockImageFetcher
 
 W, H = 1080, 1350
 SAFE = 80
-TEXT_BOTTOM = H - 250
+TEXT_BOTTOM = H - 220
 GOLD = (240, 180, 41)
 BG = (8, 9, 14)
-PANEL = (17, 19, 24)
 TEXT = (229, 231, 235)
 MUTED = (107, 114, 128)
-YT = "@CryptoFinanceDigest"
-TG = "t.me/coinwirenews"
+RULE = (30, 32, 40)
+HANDLE = "@coinwirenews"
 
-_MONEY = re.compile(
-    r"(\$\s?\d[\d,]*(?:\.\d+)?\s?(?:billion|million|[BMKTbmkt])?|\d+(?:\.\d+)?\s?%|\d+(?:\.\d+)?\s?(?:billion|million)\b)",
+_MONEY_CORE = (
+    r"\$\s?\d[\d,]*(?:\.\d+)?\s?(?:billion|million|trillion|[BMKTbmkt])?"
+    r"|\d+(?:\.\d+)?\s?%"
+    r"|\d+(?:\.\d+)?\s?(?:billion|million|trillion)\b"
+)
+_MONEY = re.compile(rf"({_MONEY_CORE})", re.I)
+_MONEY_WITH_PREP = re.compile(
+    rf"(?:\b(?:for|at|of|worth|valued(?:\s+at)?)\s+)?(?:{_MONEY_CORE})",
     re.I,
 )
+_URL = re.compile(r"https?://\S+|www\.\S+", re.I)
+_JUNK_LINE = re.compile(
+    r"^(source|read more|follow|full story|subscribe|swipe|http)\b",
+    re.I,
+)
+_STOP = {
+    "a",
+    "an",
+    "and",
+    "for",
+    "in",
+    "of",
+    "on",
+    "the",
+    "to",
+    "with",
+}
 
 
 def _clip_words(text: str, n: int) -> str:
@@ -39,81 +58,132 @@ def _clip_words(text: str, n: int) -> str:
     return " ".join(words[:n])
 
 
-def _sentences(text: str, max_n: int = 2) -> list[str]:
-    raw = re.split(r"(?<=[.!?])\s+", naturalize_text(text))
-    return [s.strip() for s in raw if s.strip()][:max_n]
+def _scrub(text: str) -> str:
+    raw = _URL.sub(" ", naturalize_text(text or ""))
+    raw = re.sub(r"\b(?:Read more|Source|Follow)\s*:?\s*", " ", raw, flags=re.I)
+    return re.sub(r"\s+", " ", raw).strip(" .,-")
+
+
+def _sentences(text: str, max_n: int = 8) -> list[str]:
+    raw = re.split(r"(?<=[.!?])\s+", naturalize_text(text or ""))
+    out: list[str] = []
+    for sent in raw:
+        if _JUNK_LINE.match(sent.strip()):
+            continue
+        sent = _scrub(sent)
+        if not sent or _JUNK_LINE.match(sent):
+            continue
+        if "@" in sent or re.search(r"\bfollow\b", sent, re.I):
+            continue
+        if len(sent.split()) < 5:
+            continue
+        out.append(sent)
+        if len(out) >= max_n:
+            break
+    return out
+
+
+def _tokens(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9$]+", text.lower()) if w not in _STOP}
+
+
+def _distinct_from(text: str, other: str) -> bool:
+    a, b = _tokens(text), _tokens(other)
+    if not a or not b:
+        return True
+    return len(a & b) / len(a) < 0.65
 
 
 def _source_label(content: dict[str, Any]) -> str:
     link = str(content.get("source_link") or "")
     host = urlparse(link).netloc.replace("www.", "") if link else ""
-    article = str(content.get("source_article") or "")
     if host:
         return host
+    article = _scrub(str(content.get("source_article") or ""))
     if article:
-        return _clip_words(article, 6)
-    return "primary source"
+        return _clip_words(article, 4)
+    return ""
+
+
+def _fact_sub(title: str, desc: str, money: re.Match[str]) -> str:
+    leftover = _MONEY_WITH_PREP.sub(" ", title)
+    leftover = re.sub(r"\s+", " ", leftover).strip(" .,-")
+    leftover = re.sub(r"\bfor\s+in\b", "in", leftover, flags=re.I)
+    leftover = re.sub(r"\s+in\s+(ETFs?|crypto|bitcoin|ether(?:eum)?)\s*$", "", leftover, flags=re.I)
+    leftover = _clip_words(leftover, 14)
+    if leftover and _distinct_from(leftover, money.group(1)):
+        return leftover
+    for sent in _sentences(desc, 3):
+        if money.group(1).lower() not in sent.lower() and _distinct_from(sent, title):
+            return _clip_words(sent, 14)
+    return "The figure reported in the story."
+
+
+def _context_copy(desc: str, script: str, title: str) -> str:
+    parts: list[str] = []
+    for src in (desc, script):
+        for sent in _sentences(src, 8):
+            if not _distinct_from(sent, title):
+                continue
+            if any(not _distinct_from(sent, prev) for prev in parts):
+                continue
+            clipped = _clip_words(sent, 16).rstrip(".")
+            if not clipped:
+                continue
+            parts.append(clipped)
+            if len(parts) >= 2:
+                return ". ".join(parts) + "."
+    if parts:
+        return parts[0].rstrip(".") + "."
+    return "The outlet published the details. We don't add numbers."
 
 
 def build_what_moved(content: dict[str, Any]) -> list[dict[str, str]]:
-    """Six slides. Never invent a number that is not in the article."""
+    """Four slides. Never invent a number that is not in the article."""
     title = naturalize_text(content.get("title") or "Coin Wire")
     desc = naturalize_text(content.get("description") or "")
     script = naturalize_text(content.get("script") or "")
     blob = f"{title}. {desc}. {script}"
     money = _MONEY.search(blob)
+    source = _source_label(content)
 
-    hook = _clip_words(title, 14)
+    hook = _clip_words(_scrub(title), 16)
     if money:
         fact_big = ascii_safe(money.group(1).strip())
-        around = blob[max(0, money.start() - 40) : money.end() + 48]
-        fact_sub = _clip_words(re.sub(re.escape(money.group(1)), "", around), 10) or "from the filing"
+        fact_sub = _fact_sub(title, desc, money)
     else:
-        fact_big = _clip_words(title, 8)
+        fact_big = _clip_words(_scrub(title), 8)
         fact_sub = "The number is in the story, not a forecast."
 
-    context_bits = _sentences(desc, 2) or [
-        ln for ln in script.splitlines() if ln and "follow coin wire" not in ln.lower()
-    ][:2]
-    context = " ".join(_clip_words(s, 16) for s in context_bits[:2]) or _clip_words(title, 16)
+    context = _context_copy(desc, script, title)
+    last: dict[str, str] = {
+        "kind": "watch",
+        "rubric": "WHAT MOVED",
+        "kicker": "What to watch",
+        "title": "Wait for the primary document. Don't trade the headline.",
+        "body": f"Follow {HANDLE} for daily crypto market moves.",
+    }
+    if source:
+        last["meta"] = f"Source: {source}"
 
     return [
         {"kind": "hook", "rubric": "WHAT MOVED", "title": hook},
-        {"kind": "fact", "rubric": "WHAT MOVED", "title": fact_big, "body": _clip_words(fact_sub, 12)},
+        {"kind": "fact", "rubric": "WHAT MOVED", "title": fact_big, "body": fact_sub},
         {"kind": "body", "rubric": "WHAT MOVED", "kicker": "Context", "title": context},
-        {
-            "kind": "body",
-            "rubric": "WHAT MOVED",
-            "kicker": "What to watch",
-            "title": "Wait for the primary document. Don't trade the headline.",
-        },
-        {
-            "kind": "body",
-            "rubric": "WHAT MOVED",
-            "kicker": "Source",
-            "title": _source_label(content),
-            "body": "What the outlet reported. We don't add numbers.",
-        },
-        {
-            "kind": "cta",
-            "rubric": "WHAT MOVED",
-            "title": "Full story on YouTube",
-            "body": YT,
-            "meta": TG,
-        },
+        last,
     ]
 
 
 def carousel_caption(content: dict[str, Any]) -> str:
     override = naturalize_text(str(content.get("carousel_caption") or "")).strip()
     if override:
-        return override[:2200]
-    title = naturalize_text(content.get("title") or "")
-    desc = _sentences(naturalize_text(content.get("description") or ""), 2)
+        return _URL.sub("", override).strip()[:2200]
+    title = _scrub(content.get("title") or "")
+    desc = _sentences(content.get("description") or "", 2)
     body = " ".join(desc) if desc else ""
     source = _source_label(content)
     lines = [title]
-    if body and body.lower() not in title.lower():
+    if body and body.lower() not in title.lower() and _distinct_from(body, title):
         lines.append(body)
     lines.append("Swipe for context.")
     if source:
@@ -122,18 +192,18 @@ def carousel_caption(content: dict[str, Any]) -> str:
     return "\n".join(lines)[:2200]
 
 
-def _blank(color: tuple[int, int, int] = BG) -> Image.Image:
-    return Image.new("RGB", (W, H), color)
+def _blank() -> Image.Image:
+    return Image.new("RGB", (W, H), BG)
 
 
 def _chrome(draw: ImageDraw.ImageDraw, rubric: str) -> None:
-    brand = load_font(28, bold=True)
-    meta = load_font(28, bold=True)
-    draw.text((SAFE, SAFE), "COIN WIRE", fill=MUTED, font=brand)
-    tag = (rubric or "").upper()
+    brand = load_font(26, bold=True)
+    meta = load_font(26, bold=True)
+    draw.text((SAFE, 72), "COIN WIRE", fill=MUTED, font=brand)
+    tag = (rubric or "WHAT MOVED").upper()
     box = draw.textbbox((0, 0), tag, font=meta)
-    draw.text((W - SAFE - (box[2] - box[0]), SAFE), tag, fill=MUTED, font=meta)
-    draw.rectangle((SAFE, 140, SAFE + 3, 320), fill=GOLD)
+    draw.text((W - SAFE - (box[2] - box[0]), 72), tag, fill=MUTED, font=meta)
+    draw.rectangle((SAFE, 128, W - SAFE, 131), fill=RULE)
 
 
 def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
@@ -141,19 +211,18 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
     if not text:
         return []
     lines: list[str] = []
-    for para in textwrap.wrap(text, width=42):
-        cur = ""
-        for word in para.split():
-            trial = f"{cur} {word}".strip()
-            box = draw.textbbox((0, 0), trial, font=font)
-            if box[2] - box[0] <= max_w:
-                cur = trial
-            else:
-                if cur:
-                    lines.append(cur)
-                cur = word
-        if cur:
-            lines.append(cur)
+    cur = ""
+    for word in text.split():
+        trial = f"{cur} {word}".strip()
+        box = draw.textbbox((0, 0), trial, font=font)
+        if box[2] - box[0] <= max_w:
+            cur = trial
+        else:
+            if cur:
+                lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
     return lines
 
 
@@ -165,7 +234,7 @@ def _paint_lines(
     y: int,
     font,
     fill,
-    gap: int = 10,
+    gap: int = 12,
 ) -> int:
     for line in lines:
         if y > TEXT_BOTTOM - 40:
@@ -176,78 +245,85 @@ def _paint_lines(
     return y
 
 
-def _darken(image: Image.Image, *, opacity: float = 0.65) -> Image.Image:
-    shade = Image.new("RGB", image.size, BG)
-    return Image.blend(image, shade, opacity)
+def _fit_lines(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    *,
+    max_w: int,
+    start: int,
+    min_size: int,
+    max_lines: int,
+    bold: bool = True,
+) -> tuple[Any, list[str]]:
+    for size in range(start, min_size - 1, -2):
+        font = load_font(size, bold=bold)
+        lines = _wrap(draw, text, font, max_w)
+        if len(lines) <= max_lines:
+            return font, lines
+    font = load_font(min_size, bold=bold)
+    return font, _wrap(draw, text, font, max_w)[:max_lines]
 
 
-def _stock_bg(title: str, keywords: Optional[list[str]], dest: Path) -> Optional[Image.Image]:
-    fetcher = StockImageFetcher()
-    if not fetcher.pexels_api_key and not fetcher.pixabay_api_key:
-        return None
-    meta = None
-    for term in pick_stock_keywords(title, keywords) + [
-        "stock exchange trading floor dark",
-        "city skyline night",
-    ]:
-        meta = fetcher.fetch_image_for_keyword(term)
-        if meta:
-            break
-    if not meta:
-        return None
-    raw = dest.with_suffix(".src.jpg")
-    if not fetcher.download_image(meta, raw):
-        return None
-    try:
-        image = Image.open(raw).convert("RGB")
-        src_w, src_h = image.size
-        ratio = W / H
-        src_ratio = src_w / src_h
-        if src_ratio > ratio:
-            new_w = int(src_h * ratio)
-            left = (src_w - new_w) // 2
-            image = image.crop((left, 0, left + new_w, src_h))
-        else:
-            new_h = int(src_w / ratio)
-            top = (src_h - new_h) // 2
-            image = image.crop((0, top, src_w, top + new_h))
-        image = image.resize((W, H), Image.Resampling.LANCZOS)
-        image = ImageEnhance.Contrast(image).enhance(1.05)
-        image = image.filter(ImageFilter.UnsharpMask(radius=1.0, percent=70, threshold=3))
-        image = _darken(image, opacity=0.62)
-        overlay = Image.new("RGB", (W, H), BG)
-        grad = Image.blend(image, overlay, 0.15)
-        return grad
-    finally:
-        raw.unlink(missing_ok=True)
+def _draw_content(draw: ImageDraw.ImageDraw, slide: dict[str, str], y: int) -> int:
+    kind = slide.get("kind") or "body"
+    tick_x = SAFE
+    x = SAFE + 28
+    max_w = W - x - SAFE
+    kicker_font = load_font(30, bold=True)
+    body_font = load_font(36, bold=False)
+
+    if slide.get("kicker"):
+        kicker = ascii_safe(slide["kicker"]).upper()
+        draw.rectangle((tick_x, y + 6, tick_x + 4, y + 34), fill=GOLD)
+        y = _paint_lines(draw, [kicker], x=x, y=y, font=kicker_font, fill=GOLD, gap=8)
+        y += 28
+    else:
+        draw.rectangle((tick_x, y + 10, tick_x + 4, y + 86), fill=GOLD)
+
+    if kind == "fact":
+        title_font, title_lines = _fit_lines(
+            draw, slide.get("title") or "", max_w=max_w, start=96, min_size=56, max_lines=2
+        )
+        y = _paint_lines(draw, title_lines, x=x, y=y, font=title_font, fill=TEXT, gap=10)
+    elif kind == "hook":
+        title_font, title_lines = _fit_lines(
+            draw, slide.get("title") or "", max_w=max_w, start=64, min_size=42, max_lines=5
+        )
+        y = _paint_lines(draw, title_lines, x=x, y=y, font=title_font, fill=TEXT, gap=18)
+    else:
+        title_font, title_lines = _fit_lines(
+            draw, slide.get("title") or "", max_w=max_w, start=48, min_size=36, max_lines=7, bold=True
+        )
+        y = _paint_lines(draw, title_lines, x=x, y=y, font=title_font, fill=TEXT, gap=16)
+
+    if slide.get("body"):
+        y += 32
+        body_lines = _wrap(draw, slide["body"], body_font, max_w)
+        y = _paint_lines(draw, body_lines, x=x, y=y, font=body_font, fill=MUTED, gap=12)
+    return y
 
 
 def _draw_slide(slide: dict[str, str], bg: Image.Image) -> Image.Image:
     image = bg.copy()
     draw = ImageDraw.Draw(image)
     _chrome(draw, slide.get("rubric") or "WHAT MOVED")
-    x = SAFE + 30
-    max_w = W - x - SAFE
-    kind = slide.get("kind") or "body"
-    title_font = load_font(64 if kind == "fact" else 52, bold=True)
-    body_font = load_font(36, bold=False)
-    kicker_font = load_font(32, bold=True)
-
-    y = 360
-    if slide.get("kicker"):
-        y = _paint_lines(draw, [ascii_safe(slide["kicker"]).upper()], x=x, y=200, font=kicker_font, fill=GOLD)
-        y += 24
-    else:
-        y = 200
-
-    title_lines = _wrap(draw, slide.get("title") or "", title_font, max_w)
-    y = _paint_lines(draw, title_lines, x=x, y=y, font=title_font, fill=TEXT, gap=12)
-    if slide.get("body"):
-        y += 18
-        body_lines = _wrap(draw, slide["body"], body_font, max_w)
-        y = _paint_lines(draw, body_lines, x=x, y=y, font=body_font, fill=MUTED, gap=8)
+    scratch = Image.new("RGB", (W, H), BG)
+    height = _draw_content(ImageDraw.Draw(scratch), slide, 0)
+    available = TEXT_BOTTOM - 168
+    top_pad = max(20, min(220, (available - height) // 3))
+    y = min(168 + top_pad, max(168, TEXT_BOTTOM - height - 8))
+    _draw_content(draw, slide, y)
     if slide.get("meta"):
-        _paint_lines(draw, [ascii_safe(slide["meta"])], x=x, y=min(y + 28, TEXT_BOTTOM - 50), font=body_font, fill=MUTED)
+        meta_font = load_font(26, bold=False)
+        _paint_lines(
+            draw,
+            [ascii_safe(slide["meta"])],
+            x=SAFE + 28,
+            y=TEXT_BOTTOM - 20,
+            font=meta_font,
+            fill=MUTED,
+            gap=6,
+        )
     return image
 
 
@@ -257,22 +333,14 @@ def render_what_moved(
     *,
     fetch_stock: bool = True,
 ) -> list[Path]:
-    """Write 01.jpg…06.jpg + caption.txt. Stock only on slide 1."""
+    """Write 01.jpg…04.jpg + caption.txt. Type-only; fetch_stock is ignored."""
+    del fetch_stock
     out = Path(work_dir) / "ig_carousel"
     out.mkdir(parents=True, exist_ok=True)
     slides = build_what_moved(content)
-    stock = None
-    if fetch_stock:
-        stock = _stock_bg(str(content.get("title") or ""), content.get("keywords") or [], out / "cover")
     paths: list[Path] = []
     for idx, slide in enumerate(slides, start=1):
-        if idx == 1 and stock is not None:
-            bg = stock
-        elif slide.get("kind") == "hook":
-            bg = _blank(BG)
-        else:
-            bg = _blank(PANEL)
-        frame = _draw_slide(slide, bg)
+        frame = _draw_slide(slide, _blank())
         path = out / f"{idx:02d}.jpg"
         frame.save(path, format="JPEG", quality=92, optimize=True)
         paths.append(path)

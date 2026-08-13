@@ -181,7 +181,7 @@ def create_instagram_feed_assets(
     thumbnail_fallback: Optional[Path] = None,
     content: Optional[dict] = None,
 ) -> List[Path]:
-    """Glassdark What Moved pack (6 slides) or slide 1 only."""
+    """Glassdark What Moved pack (4 slides) or slide 1 only."""
     from src.media.ig_carousel import render_what_moved
 
     pack = dict(content or {})

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Історія — Coin Wire desk{% endblock %}
+{% block body %}
+<div class="page-wrap">
+  <header class="desk-header">
+    <span class="brand">Coin Wire</span>
+    <div class="header-actions">
+      <a class="btn-ghost btn-compact" href="/">← Сьогодні</a>
+      <a class="btn-ghost btn-compact" href="/stats">Статистика</a>
+      <form method="post" action="/logout">
+        <button class="btn-ghost btn-compact" type="submit">Вийти</button>
+      </form>
+    </div>
+  </header>
+
+  {% if storage_warn %}
+  <div class="warn-banner">
+    Railway volume не змонтований на <code>/app/data</code> — після деплою історія знову згорить.
+  </div>
+  {% endif %}
+
+  <h2 class="history-title">Історія{% if count %} · {{ count }}{% endif %}</h2>
+  <p class="step">Минулі дні. Сьогоднішні пости лишаються на головній.</p>
+  <textarea id="clip-fallback" class="clip-fallback" aria-hidden="true" readonly></textarea>
+
+  {% if groups %}
+  {% for group in groups %}
+  <section class="history-day">
+    <h3 class="section-title">{{ group.label }}</h3>
+    {% for item in group.editorial %}
+    {% include "editorial_card.html" %}
+    {% endfor %}
+    {% for short in group.shorts %}
+    <article class="card recent-item">
+      <div>
+        <p class="recent-title">{{ short.title }}</p>
+        <p class="recent-when">Short{% if short.when %} · {{ short.when }}{% endif %}</p>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% endfor %}
+  {% else %}
+  <p class="inline-empty">Поки порожньо — пости старші за сьогодні з’являться тут.</p>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/desk.js" defer></script>
+{% endblock %}

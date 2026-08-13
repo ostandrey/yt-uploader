@@ -9,11 +9,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def data_root() -> Path:
-    """Project data/ directory, or COIN_WIRE_DATA override (absolute path)."""
+    """Persistent data dir. Railway volume must be mounted at /app/data."""
     override = os.getenv("COIN_WIRE_DATA", "").strip()
     if override:
-        return Path(override)
-    return ROOT / "data"
+        path = Path(override)
+    elif os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"):
+        path = Path("/app/data")
+    else:
+        path = ROOT / "data"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def coin_wire_storage() -> Path:
@@ -42,6 +47,7 @@ def storage_status() -> dict:
         except (OSError, json.JSONDecodeError, TypeError):
             sub_n = 0
     on_railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
+    mounted = _path_is_mount(str(data_root())) if on_railway else True
     return {
         "path": str(storage),
         "data_root": str(data_root()),
@@ -51,5 +57,29 @@ def storage_status() -> dict:
         "videos": video_n,
         "push_subs": sub_n,
         "railway": on_railway,
-        "warn_no_volume": on_railway and not sqlite.is_file() and video_n == 0,
+        "coin_wire_data": os.getenv("COIN_WIRE_DATA", ""),
+        "volume_mounted": mounted,
+        "warn_no_volume": on_railway and not mounted,
     }
+
+
+def _path_is_mount(path: str) -> bool:
+    """True when path is a real volume mount, not overlay disk."""
+    try:
+        mounts = Path("/proc/mounts").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    target = Path(path).resolve()
+    for line in mounts.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        try:
+            mount = Path(parts[1]).resolve()
+        except OSError:
+            continue
+        if target == mount or target.is_relative_to(mount):
+            if mount == Path("/"):
+                continue
+            return True
+    return False

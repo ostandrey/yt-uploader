@@ -14,11 +14,14 @@ def test_what_moved_uses_number_from_article_only():
             "source_link": "https://www.bloomberg.com/news/example",
         }
     )
-    assert len(slides) == 6
+    assert len(slides) == 4
     assert "$4.6B" in slides[1]["title"]
     assert slides[0]["kind"] == "hook"
-    assert slides[-1]["kind"] == "cta"
-    assert "bloomberg.com" in slides[4]["title"]
+    assert slides[-1]["kind"] == "watch"
+    assert "bloomberg.com" in slides[-1]["meta"]
+    blob = " ".join(f"{s.get('title', '')} {s.get('body', '')} {s.get('meta', '')}" for s in slides)
+    assert "http" not in blob.lower()
+    assert "CryptoFinanceDigest" not in blob
 
 
 def test_what_moved_does_not_invent_money():
@@ -26,32 +29,62 @@ def test_what_moved_does_not_invent_money():
     assert "$" not in slides[1]["title"]
 
 
-def test_render_six_slides(tmp_path: Path):
+def test_context_drops_url_and_does_not_echo_headline():
+    slides = build_what_moved(
+        {
+            "title": "Goldman Sachs to acquire Neos for $2.25 billion in ETFs",
+            "description": (
+                "Neos Investments offers the Bitcoin High Income ETF and Ethereum High Income ETF. "
+                "Source: The Block Read more: https://www.theblock.co/news/business/2026-08-12-goldman "
+                "Follow @coinwirenews for daily crypto market moves."
+            ),
+            "source_link": "https://www.theblock.co/news/business/2026-08-12-goldman-sachs",
+        }
+    )
+    assert len(slides) == 4
+    assert "for in" not in (slides[1].get("body") or "").lower()
+    assert "$2.25" in slides[1]["title"]
+    context = slides[2]["title"]
+    assert "http" not in context.lower()
+    assert "theblock.co/news" not in context
+    assert "Neos" in context
+    assert slides[2]["title"] != slides[0]["title"]
+    assert "coinwirenews" in (slides[3].get("body") or "").lower()
+    assert "theblock.co" in (slides[3].get("meta") or "")
+    caption = carousel_caption(
+        {
+            "title": "Goldman Sachs to acquire Neos for $2.25 billion in ETFs",
+            "description": "https://www.theblock.co/news/business/foo Neos runs income ETFs.",
+            "source_link": "https://www.theblock.co/x",
+        }
+    )
+    assert "http" not in caption.lower()
+    assert "theblock.co" in caption
+
+
+def test_render_four_slides(tmp_path: Path):
     paths = render_what_moved(
         {"title": "Fed holds rates. Bitcoin barely moved.", "description": "Officials left the target unchanged."},
         tmp_path,
         fetch_stock=False,
     )
-    assert len(paths) == 6
+    assert len(paths) == 4
     for path in paths:
         image = Image.open(path)
         assert image.size == (1080, 1350)
     caption = (tmp_path / "ig_carousel" / "caption.txt").read_text(encoding="utf-8")
     assert "Swipe for context" in caption
-    assert carousel_caption({"title": "Fed holds rates"}) 
+    assert carousel_caption({"title": "Fed holds rates"})
 
 
-
-def test_instagram_feed_assets_six_slides(tmp_path, monkeypatch):
+def test_instagram_feed_assets_four_slides(tmp_path, monkeypatch):
     from src.media import instagram_feed_image as feed
 
     monkeypatch.setattr(
         "src.media.ig_carousel.render_what_moved",
-        lambda content, work_dir, fetch_stock=True: [
-            Path(work_dir) / f"{i}.jpg" for i in range(6)
-        ],
+        lambda content, work_dir, fetch_stock=True: [Path(work_dir) / f"{i}.jpg" for i in range(4)],
     )
     paths = feed.create_instagram_feed_assets("Hello", tmp_path, carousel=True)
-    assert len(paths) == 6
+    assert len(paths) == 4
     one = feed.create_instagram_feed_assets("Hello", tmp_path, carousel=False)
     assert len(one) == 1

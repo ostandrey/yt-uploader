@@ -45,6 +45,8 @@ def test_question_and_context(monkeypatch):
     q = question_post(ARTICLE)
     ctx = telegram_context({**ARTICLE, "tier": "breaking"})
     assert "?" in q
+    assert "Does this change the setup" not in q
+    assert "BlackRock" in q or "ETF" in q or "inflows" in q.lower()
     assert "Context" in ctx or "context" in ctx.lower()
     assert "—" not in ctx
     assert "—" not in q

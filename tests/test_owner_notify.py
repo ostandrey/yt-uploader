@@ -41,7 +41,7 @@ def test_short_status_bundle():
     assert "📸 IG Reel" in text
     assert "6 slides" in text
     assert "BlackRock" in text
-    assert "https://desk.example/" in text
+    assert "https://desk.example/?tab=tiktok" in text
     assert "https://youtu.be/x" in text
 
 
@@ -51,6 +51,16 @@ def test_editorial_desk_ready():
     assert "opinion" in text
     assert "desk ready" in text
     assert "ETF flows" in text
+
+
+def test_desk_deep_link(monkeypatch):
+    from src.publishers.owner_notify import desk_deep_link
+
+    monkeypatch.delenv("DESK_PUBLIC_URL", raising=False)
+    assert desk_deep_link(kind="question", item_id="e-abc") == "/?tab=threads&item=e-abc"
+    monkeypatch.setenv("DESK_PUBLIC_URL", "https://desk.example")
+    linked = format_desk_editorial_ready(kind="question", title="Neos deal", item_id="e-abc")
+    assert "https://desk.example/?tab=threads&item=e-abc" in linked
 
 
 def test_threads_pulse_posted():

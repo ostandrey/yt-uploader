@@ -35,10 +35,37 @@ def _private_key() -> str:
 
 
 def _subject() -> str:
+    # Push services reject odd subjects like mailto:…@local
     return (
-        os.getenv("DESK_VAPID_SUBJECT", "mailto:coinwire@local").strip()
-        or "mailto:coinwire@local"
+        os.getenv("DESK_VAPID_SUBJECT", "").strip()
+        or os.getenv("VAPID_SUBJECT", "").strip()
+        or "mailto:coinwire@example.com"
     )
+
+
+def _env_vapid() -> dict[str, str]:
+    pub = (
+        os.getenv("DESK_VAPID_PUBLIC", "").strip()
+        or os.getenv("VAPID_PUBLIC_KEY", "").strip()
+    )
+    priv = (
+        os.getenv("DESK_VAPID_PRIVATE", "").strip()
+        or os.getenv("VAPID_PRIVATE_KEY", "").strip()
+    )
+    if pub and priv:
+        return {"publicKey": pub, "privateKey": priv}
+    return {}
+
+
+def subscription_debug_info(subscription: dict[str, Any]) -> dict[str, Any]:
+    endpoint = str(subscription.get("endpoint") or "")
+    keys = subscription.get("keys") or {}
+    return {
+        "has_endpoint": bool(endpoint),
+        "endpoint_prefix": endpoint[:35],
+        "has_p256dh": bool(keys.get("p256dh")),
+        "has_auth": bool(keys.get("auth")),
+    }
 
 
 def _b64(data: bytes) -> str:
@@ -59,10 +86,9 @@ def _generate_vapid() -> dict[str, str]:
 
 
 def _ensure_vapid() -> dict[str, str]:
-    env_pub = os.getenv("DESK_VAPID_PUBLIC", "").strip()
-    env_priv = os.getenv("DESK_VAPID_PRIVATE", "").strip()
-    if env_pub and env_priv:
-        return {"publicKey": env_pub, "privateKey": env_priv}
+    env_keys = _env_vapid()
+    if env_keys:
+        return env_keys
 
     with _lock:
         if VAPID_FILE.exists():
@@ -75,6 +101,7 @@ def _ensure_vapid() -> dict[str, str]:
                     }
             except (OSError, json.JSONDecodeError, TypeError):
                 pass
+        on_railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
         try:
             keys = _generate_vapid()
         except Exception as exc:
@@ -85,6 +112,11 @@ def _ensure_vapid() -> dict[str, str]:
             VAPID_FILE.write_text(json.dumps(keys, indent=2), encoding="utf-8")
         except OSError as exc:
             log.warning("VAPID persist failed (keys still in memory this process): %s", exc)
+        if on_railway:
+            log.warning(
+                "Generated ephemeral VAPID keys. Set DESK_VAPID_PUBLIC + "
+                "DESK_VAPID_PRIVATE (or mount /app/data) or iOS push dies after deploy."
+            )
         return keys
 
 
@@ -105,13 +137,19 @@ def save_subscription(subscription: dict[str, Any]) -> None:
     endpoint = str(subscription.get("endpoint") or "")
     if not endpoint:
         return
+    keys = subscription.get("keys") or {}
+    if not keys.get("p256dh") or not keys.get("auth"):
+        raise ValueError("subscription missing keys")
     with _lock:
         items = load_subscriptions()
         items = [item for item in items if item.get("endpoint") != endpoint]
         items.append(
             {
                 "endpoint": endpoint,
-                "keys": subscription.get("keys") or {},
+                "keys": {
+                    "p256dh": str(keys.get("p256dh") or ""),
+                    "auth": str(keys.get("auth") or ""),
+                },
                 "expirationTime": subscription.get("expirationTime"),
             }
         )
@@ -120,6 +158,7 @@ def save_subscription(subscription: dict[str, Any]) -> None:
             json.dumps({"subscriptions": items[-20:]}, indent=2),
             encoding="utf-8",
         )
+        log.info("Push subscription saved: %s", subscription_debug_info(subscription))
 
 
 def remove_subscription(endpoint: str) -> None:
@@ -132,42 +171,97 @@ def remove_subscription(endpoint: str) -> None:
         )
 
 
+def vapid_source() -> str:
+    if _env_vapid():
+        return "env"
+    if VAPID_FILE.exists():
+        return "file"
+    return "generated"
+
+
+def push_status() -> dict[str, Any]:
+    return {
+        "configured": push_configured(),
+        "subs": len(load_subscriptions()),
+        "vapid_file": VAPID_FILE.exists(),
+        "vapid_source": vapid_source(),
+        "subs_file": SUBS_FILE.exists(),
+        "storage": str(STORAGE),
+        "subject": _subject(),
+    }
+
+
 def notify_desk_push(
     title: str,
     body: str,
     *,
     url: str = "/",
+    tag: str = "cw-desk-push",
 ) -> dict[str, Any]:
     """Send Web Push to all desk subscribers. No-op if not configured."""
     if not push_configured():
-        return {"sent": 0, "reason": "push_disabled"}
+        return {"sent": 0, "failed": 0, "reason": "push_disabled", "errors": []}
     try:
         from pywebpush import webpush
     except ImportError:
-        return {"sent": 0, "reason": "pywebpush_missing"}
+        return {"sent": 0, "failed": 0, "reason": "pywebpush_missing", "errors": []}
+
+    subs = load_subscriptions()
+    if not subs:
+        return {"sent": 0, "failed": 0, "reason": "no_subscriptions", "errors": []}
 
     payload = json.dumps(
         {
             "title": title[:80],
             "body": body[:160],
             "url": url or "/",
+            "tag": tag[:80] if tag else "cw-desk-push",
         },
         ensure_ascii=False,
     )
     sent = 0
-    for sub in load_subscriptions():
+    failed = 0
+    errors: list[str] = []
+    for sub in subs:
+        endpoint = str(sub.get("endpoint") or "")
         try:
-            webpush(
+            response = webpush(
                 subscription_info=sub,
                 data=payload,
                 vapid_private_key=_private_key(),
                 vapid_claims={"sub": _subject()},
+                ttl=86400,
+                headers={"Urgency": "high"},
+            )
+            status = getattr(response, "status_code", None) or 201
+            log.info(
+                "Web Push sent: status=%s %s vapid=%s",
+                status,
+                subscription_debug_info(sub),
+                vapid_source(),
             )
             sent += 1
         except Exception as exc:
+            failed += 1
             msg = str(exc)
             status = getattr(getattr(exc, "response", None), "status_code", None)
+            body_txt = getattr(getattr(exc, "response", None), "text", "") or ""
+            log.warning(
+                "Web Push failed: status=%s body=%s %s",
+                status,
+                str(body_txt)[:200],
+                subscription_debug_info(sub),
+            )
             if status in {404, 410} or "410" in msg or "404" in msg:
-                remove_subscription(str(sub.get("endpoint") or ""))
-            log.warning("Desk push failed: %s", exc)
-    return {"sent": sent}
+                remove_subscription(endpoint)
+                errors.append(f"gone:{status or '4xx'}")
+            else:
+                errors.append(f"{status or 'err'}:{msg[:120]}")
+    return {
+        "sent": sent,
+        "failed": failed,
+        "reason": "ok" if sent else "all_failed",
+        "errors": errors[:5],
+        "subs": len(subs),
+        "vapid_source": vapid_source(),
+    }

@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
-LOG_FILE = Path("data/storage/coin_wire/editorial_log.json")
-MAX_ITEMS = 80
+from src.paths import coin_wire_storage
+
+LOG_FILE = coin_wire_storage() / "editorial_log.json"
+MAX_ITEMS = 500
 
 
 def _now_iso() -> str:

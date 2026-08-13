@@ -23,10 +23,12 @@ self.addEventListener("push", (event) => {
   }
   event.waitUntil(
     self.registration.showNotification(data.title || "Coin Wire", {
-      body: data.body || "",
+      body: data.body || "Є новий контент для перевірки",
       data: { url: data.url || "/" },
       badge: "/static/icon-192.png",
       icon: "/static/icon-192.png",
+      tag: data.tag || "cw-desk-push",
+      renotify: true,
     })
   );
 });

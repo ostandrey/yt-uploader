@@ -59,7 +59,7 @@
     if (fallback) fallback.value = value;
     try {
       await navigator.clipboard.writeText(value);
-      toast("Опис у буфері");
+      toast("Скопійовано");
       return true;
     } catch (err) {
       if (fallback) {
@@ -70,7 +70,7 @@
           const ok = document.execCommand("copy");
           fallback.classList.add("visually-hidden");
           if (ok) {
-            toast("Опис у буфері");
+            toast("Скопійовано");
             return true;
           }
         } catch (copyErr) {
@@ -263,6 +263,13 @@
             const age = data.age ? ` · ${data.age}` : "";
             badge.textContent = `${data.badge || ""}${age}`;
           }
+          const list = card.parentElement;
+          if (list && data.done) {
+            list.appendChild(card);
+          } else if (list && !data.done) {
+            const firstDone = list.querySelector(".editorial-item.is-done");
+            if (firstDone && firstDone !== card) list.insertBefore(card, firstDone);
+          }
         }
         toast(box.checked ? "Позначено як запощено" : "Повернуто в чергу");
       } catch (err) {
@@ -270,6 +277,41 @@
         toast("Не вдалось зберегти позначку", false);
       }
     });
+  });
+  async function saveAllSlides(btn) {
+    if (btn) {
+      btn.disabled = true;
+      flashLabel(btn, "Зберігаю…");
+    }
+    try {
+      const files = await carouselFiles();
+      if (!files.length) {
+        toast("Немає слайдів", false);
+        return;
+      }
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files }))) {
+        await navigator.share({ files, title: pack.title || "Coin Wire" });
+        toast(`${files.length} слайди збережено`);
+        return;
+      }
+      files.forEach((file) => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(file);
+        a.download = file.name;
+        a.click();
+        window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      });
+      toast(`${files.length} слайди збережено`);
+    } catch (err) {
+      if (err && err.name === "AbortError") return;
+      window.location.href = "/media/ig.zip";
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  document.querySelectorAll("[data-save-carousel]").forEach((btn) => {
+    btn.addEventListener("click", () => saveAllSlides(btn));
   });
   document.querySelectorAll("[data-share-carousel]").forEach((btn) => {
     btn.addEventListener("click", () => shareCarousel(btn));
@@ -331,20 +373,26 @@
     const panels = Array.from(document.querySelectorAll("[data-panel]"));
     if (!tabs.length || !panels.length) return;
 
+    function panelVisible(tabId, panel) {
+      return panel.getAttribute("data-panel") === tabId;
+    }
+
     function show(tabId) {
-      const allMode = tabId === "all";
       tabs.forEach((tab) => {
         tab.classList.toggle("is-active", tab.getAttribute("data-tab") === tabId);
       });
       panels.forEach((panel) => {
-        const id = panel.getAttribute("data-panel");
-        const visible = allMode
-          ? id === "short" || id === "threads" || id === "telegram" || id === "tiktok" || id === "instagram"
-          : id === tabId;
-        panel.hidden = !visible;
+        panel.hidden = !panelVisible(tabId, panel);
       });
       try {
         localStorage.setItem("cw-desk-tab", tabId);
+      } catch (err) {
+        /* ignore */
+      }
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", tabId);
+        window.history.replaceState({}, "", url);
       } catch (err) {
         /* ignore */
       }
@@ -354,24 +402,31 @@
       tab.addEventListener("click", () => show(tab.getAttribute("data-tab")));
     });
 
-    let initial = "all";
-    try {
-      initial = localStorage.getItem("cw-desk-tab") || "all";
-    } catch (err) {
-      initial = "all";
+    const params = new URLSearchParams(window.location.search);
+    let initial = params.get("tab") || "";
+    if (!initial) {
+      try {
+        initial = localStorage.getItem("cw-desk-tab") || "threads";
+      } catch (err) {
+        initial = "threads";
+      }
     }
-    if (!tabs.some((tab) => tab.getAttribute("data-tab") === initial)) {
-      initial = "all";
-    }
-    // Prefer first tab with a badge if landing on all and there are new items
-    const hot = tabs.find((tab) => {
-      const id = tab.getAttribute("data-tab");
-      return id !== "all" && tab.querySelector(".desk-tab-badge");
-    });
-    if (initial === "all" && hot) {
+    const hot = tabs.find((tab) => tab.querySelector(".desk-tab-badge"));
+    if (!params.get("tab") && hot) {
       initial = hot.getAttribute("data-tab");
+    } else if (!tabs.some((tab) => tab.getAttribute("data-tab") === initial)) {
+      initial = tabs[0].getAttribute("data-tab");
     }
     show(initial);
+
+    const itemId = params.get("item");
+    if (itemId) {
+      const card = document.querySelector(`[data-editorial-id="${CSS.escape(itemId)}"]`);
+      if (card) {
+        card.classList.add("is-focus");
+        window.setTimeout(() => card.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+      }
+    }
   }
 
   function urlBase64ToUint8Array(base64String) {
@@ -438,16 +493,29 @@
           btn.textContent = "Надіслати тест";
           btn.dataset.mode = "test";
           if (card) card.classList.add("is-on");
+          const dot = document.getElementById("push-dot");
+          if (dot) {
+            dot.hidden = false;
+            dot.classList.add("is-on");
+            dot.title = "Push: активний";
+          }
           if (statusText) {
-            statusText.textContent = "Сповіщення увімкнені. Натисни тест — має прийти ping.";
+            statusText.textContent =
+              `Увімкнено (standalone=${isStandalone}). Тест: спочатку local, потім server.`;
           }
         } else {
           btn.textContent = "Увімкнути сповіщення";
           btn.dataset.mode = "subscribe";
           if (card) card.classList.remove("is-on");
+          const dot = document.getElementById("push-dot");
+          if (dot) {
+            dot.hidden = false;
+            dot.classList.remove("is-on");
+            dot.title = "Push: вимкнений";
+          }
           if (statusText) {
             statusText.textContent =
-              "Натисни кнопку → Allow у браузері. Після цього приходитимуть короткі ping-и.";
+              `Allow → підписка. standalone=${isStandalone}, permission=${Notification.permission}`;
           }
         }
       } catch (err) {
@@ -473,22 +541,38 @@
           }
           return;
         }
+        try {
+          const regLocal = await navigator.serviceWorker.ready;
+          await regLocal.showNotification("Coin Wire local test", {
+            body: "Local notification works",
+            icon: "/static/icon-192.png",
+            badge: "/static/icon-192.png",
+            tag: "coin-wire-local-test",
+          });
+        } catch (localErr) {
+          console.error(localErr);
+          toast("Локальні сповіщення не працюють у цій PWA", false);
+          return;
+        }
         const keyRes = await fetch("/api/push/public-key", { credentials: "same-origin" });
         if (!keyRes.ok) throw new Error("key");
         const { publicKey } = await keyRes.json();
         const reg = await navigator.serviceWorker.ready;
-        const old = await reg.pushManager.getSubscription();
-        if (old) {
-          try {
-            await old.unsubscribe();
-          } catch (err) {
-            /* continue */
+        let sub = await reg.pushManager.getSubscription();
+        // Don't rotate the iOS subscription on every test — that yields 410.
+        if (btn.dataset.mode !== "test" || !sub) {
+          if (sub) {
+            try {
+              await sub.unsubscribe();
+            } catch (err) {
+              /* continue */
+            }
           }
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(publicKey),
+          });
         }
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
-        });
         const res = await fetch("/api/push/subscribe", {
           method: "POST",
           credentials: "same-origin",
@@ -503,12 +587,20 @@
         const testBody = testRes.ok ? await testRes.json() : {};
         await refreshLabel();
         if (testRes.ok && (testBody.sent || 0) > 0) {
-          toast("Тест-пуш надіслано");
+          toast("Серверний push OK — має бути друге сповіщення");
+          if (statusText) {
+            statusText.textContent =
+              "Працює: локальне + серверне. Якщо бачиш лише перше — iOS ще не прийняв remote push.";
+          }
         } else {
-          toast(
-            "Підписка є, але сервер не зміг надіслати (перевір volume / pywebpush)",
-            false
-          );
+          const why = testBody.reason || "unknown";
+          const err = (testBody.errors && testBody.errors[0]) || "";
+          toast(`Push з сервера ні: ${why}`, false);
+          if (statusText) {
+            statusText.textContent =
+              `Підписка збережена, але сервер не доставив (${why}${err ? ": " + err : ""}). ` +
+              `Підписок на сервері: ${(testBody.status && testBody.status.subs) || testBody.subs || 0}.`;
+          }
         }
       } catch (err) {
         console.error(err);

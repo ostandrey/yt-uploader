@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from src.content import editorial_copy
 from src.content.editorial_log import append_event, events_since, format_events_list, load_log
 from src.content.story_dedupe import titles_similar
-from src.desk.catalog import _raw_editorial_items, load_editorial_items, write_editorial_items
+from src.desk.catalog import _raw_editorial_items, write_editorial_items
 from src.publishers.telegram_publisher import TelegramPublisher
 from src.publishers.threads_publisher import ThreadsPublisher
 
@@ -25,7 +25,7 @@ def _story_editorial_done(title: str) -> bool:
     title = (title or "").strip()
     if not title:
         return False
-    for item in load_editorial_items():
+    for item in _raw_editorial_items():
         text = str(item.get("text") or "")
         if text and titles_similar(title, text[:220]):
             return True
@@ -98,12 +98,13 @@ def _push_desk_item(kind: str, label: str, text: str) -> None:
     write_editorial_items(raw)
     try:
         from src.desk.push import notify_desk_push
-        from src.publishers.owner_notify import format_desk_editorial_ready
+        from src.publishers.owner_notify import desk_deep_link, format_desk_editorial_ready
 
         notify_desk_push(
             "Desk ready",
-            format_desk_editorial_ready(kind=kind),
-            url="/",
+            format_desk_editorial_ready(kind=kind, item_id=item_id),
+            url=desk_deep_link(kind=kind, item_id=item_id),
+            tag=f"cw-desk-{item_id}",
         )
     except Exception as exc:
         print(f"Desk push (editorial) failed: {exc}")

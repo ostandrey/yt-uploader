@@ -1,0 +1,28 @@
+<article
+  class="editorial-item {% if item.is_new %}is-new{% endif %} {% if item.done %}is-done{% endif %} {% if item.parts %}is-question{% endif %}"
+  data-editorial-id="{{ item.id }}"
+  id="item-{{ item.id }}"
+>
+  <div class="editorial-meta">
+    <p class="editorial-label">{{ item.label }}</p>
+    <span class="editorial-badge badge-{{ item.badge_kind }}">{{ item.badge }}{% if item.age %} · {{ item.age }}{% endif %}</span>
+  </div>
+  {% if item.snip %}
+  <p class="editorial-snip">{{ item.snip }}</p>
+  {% endif %}
+  {% if item.parts %}
+  <div class="q-card">
+    <p class="q-ask">{{ item.parts.question }}</p>
+    <p class="q-opt"><span>A</span> {{ item.parts.a }}</p>
+    <p class="q-opt"><span>B</span> {{ item.parts.b }}</p>
+  </div>
+  {% endif %}
+  <textarea readonly data-select data-editorial="{{ item.id }}" {% if item.parts %}class="visually-hidden"{% endif %}>{{ item.text }}</textarea>
+  <div class="editorial-actions">
+    <button type="button" class="btn-secondary" data-copy-text="{{ item.id }}">Copy</button>
+    <label class="mark editorial-mark">
+      <input type="checkbox" data-editorial-done="{{ item.id }}" {% if item.done %}checked{% endif %}>
+      <span>Вже запостив</span>
+    </label>
+  </div>
+</article>

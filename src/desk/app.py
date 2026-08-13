@@ -149,6 +149,7 @@ def health():
         "ok": True,
         "desk": auth.enabled(),
         "storage": status,
+        "push": push.push_status(),
     }
 
 
@@ -216,7 +217,10 @@ def today(request: Request):
         return RedirectResponse("/login", status_code=303)
     pack = catalog.load_latest()
     public = _public_pack(pack)
-    editorial = catalog.load_editorial_items()
+    editorial = catalog.load_editorial_items(scope="today")
+    from src.paths import storage_status
+
+    storage = storage_status()
     return templates.TemplateResponse(
         request,
         "today.html",
@@ -229,6 +233,30 @@ def today(request: Request):
             "editorial": editorial,
             "tabs": catalog.desk_tabs(public, editorial),
             "push_enabled": push.push_configured(),
+            "history_count": catalog.editorial_history_count(),
+            "storage_warn": bool(storage.get("warn_no_volume")),
+            "next_check": catalog.next_check_label(),
+        },
+    )
+
+
+@app.get("/history")
+def history(request: Request):
+    if not auth.enabled():
+        raise HTTPException(404, "desk disabled")
+    if not _authed(request):
+        return RedirectResponse("/login", status_code=303)
+    page = catalog.history_page()
+    return templates.TemplateResponse(
+        request,
+        "history.html",
+        {
+            "request": request,
+            "logged_in": True,
+            "nav": "history",
+            "groups": page["groups"],
+            "count": page["count"],
+            "storage_warn": page["storage_warn"],
         },
     )
 
@@ -335,14 +363,16 @@ def api_push_subscribe(request: Request, body: PushSubBody):
         raise HTTPException(401, "auth required")
     if not push.push_configured():
         raise HTTPException(503, "push unavailable")
-    push.save_subscription(
-        {
-            "endpoint": body.endpoint,
-            "keys": body.keys,
-            "expirationTime": body.expirationTime,
-        }
-    )
-    return JSONResponse({"ok": True})
+    payload = {
+        "endpoint": body.endpoint,
+        "keys": body.keys,
+        "expirationTime": body.expirationTime,
+    }
+    try:
+        push.save_subscription(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return JSONResponse({"ok": True, "sub": push.subscription_debug_info(payload)})
 
 
 @app.post("/api/push/test")
@@ -352,10 +382,12 @@ def api_push_test(request: Request):
     if not push.push_configured():
         raise HTTPException(503, "push unavailable")
     result = push.notify_desk_push(
-        "Desk push OK",
-        "Якщо бачиш це — сповіщення працюють",
+        "Coin Wire server test",
+        "Web Push reached the device",
         url="/",
+        tag="coin-wire-server-test",
     )
+    result["status"] = push.push_status()
     return JSONResponse(result)
 
 @app.post("/api/editorial/done")

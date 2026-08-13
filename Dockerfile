@@ -22,5 +22,6 @@ RUN mkdir -p \
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONIOENCODING=utf-8
 ENV LANG=C.UTF-8
+ENV COIN_WIRE_DATA=/app/data
 
 CMD ["python", "coin_wire_worker.py"]

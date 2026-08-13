@@ -7,6 +7,7 @@
     <div class="header-actions">
       <button type="button" class="btn-ghost btn-compact" id="refresh-btn" title="Оновити">Оновити</button>
       <a class="btn-ghost btn-compact" href="/">← Сьогодні</a>
+      <a class="btn-ghost btn-compact" href="/history">Історія</a>
       <form method="post" action="/logout">
         <button class="btn-ghost btn-compact" type="submit">Вийти</button>
       </form>
@@ -70,6 +71,9 @@
     </div>
 
     <p class="muted">Останній Short: {{ snap.latest_title or "—" }}{% if snap.latest_at %} · {{ snap.latest_at }}{% endif %}</p>
+    {% if snap.overdue_today %}
+    <p class="warn-inline">{{ snap.overdue_today }}</p>
+    {% endif %}
     <p class="muted">Desk тексти: {{ snap.editorial_open }} відкритих · {{ snap.editorial_done }} готових</p>
 
     <h3 class="section-title">Ролики</h3>

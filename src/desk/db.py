@@ -40,6 +40,15 @@ CREATE TABLE IF NOT EXISTS marks (
     FOREIGN KEY (short_id) REFERENCES shorts(id)
 );
 CREATE INDEX IF NOT EXISTS idx_shorts_updated ON shorts(updated_at);
+CREATE TABLE IF NOT EXISTS editorial (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL DEFAULT 'note',
+    label TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_editorial_created ON editorial(created_at);
 """
 
 
@@ -61,6 +70,7 @@ def connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA journal_mode = WAL")
     global _initialized
     if not _initialized:
         with _lock:
@@ -200,6 +210,79 @@ def set_mark(short_id: int, platform: str, posted: bool) -> Optional[dict[str, A
             return _hydrate(conn, row) if row else None
         finally:
             conn.close()
+
+
+def list_editorial() -> list[dict[str, Any]]:
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, kind, label, text, created_at, done FROM editorial ORDER BY created_at DESC"
+        ).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "kind": str(row["kind"] or "note"),
+                "label": str(row["label"] or row["kind"] or "Copy"),
+                "text": str(row["text"] or ""),
+                "created_at": str(row["created_at"] or ""),
+                "done": bool(row["done"]),
+            }
+            for row in rows
+            if str(row["text"] or "").strip()
+        ]
+    finally:
+        conn.close()
+
+
+def replace_editorial(items: list[dict[str, Any]]) -> None:
+    rows = []
+    seen: set[str] = set()
+    for item in items:
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        item_id = str(item.get("id") or "").strip()
+        if not item_id or item_id in seen:
+            item_id = f"e-{abs(hash(text)) & 0xFFFFF:x}"
+        seen.add(item_id)
+        rows.append(
+            (
+                item_id,
+                str(item.get("kind") or "note"),
+                str(item.get("label") or item.get("kind") or "Copy"),
+                text,
+                str(item.get("created_at") or _now()),
+                1 if item.get("done") else 0,
+            )
+        )
+    with _lock:
+        conn = connect()
+        try:
+            conn.execute("DELETE FROM editorial")
+            conn.executemany(
+                """
+                INSERT INTO editorial (id, kind, label, text, created_at, done)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def migrate_editorial_from_json(items: list[dict[str, Any]]) -> None:
+    if not items:
+        return
+    with _lock:
+        conn = connect()
+        try:
+            n = conn.execute("SELECT COUNT(*) AS n FROM editorial").fetchone()["n"]
+            if int(n) > 0:
+                return
+        finally:
+            conn.close()
+    replace_editorial(items)
 
 
 def mark_counts() -> dict[str, int]:

@@ -90,18 +90,41 @@ Article summary: {article.get("summary") or ""}"""
 
 def question_post(article: dict[str, Any]) -> str:
     title = naturalize_text(article.get("title") or "")
-    user = f"""Rules:
-- Max 200 characters for the question, then two answer options on separate lines.
-- One direct question tied to today's article. Not a generic crypto survey.
-- No hashtags. No emoji. No preamble. No em dashes.
+    user = f"""You write one Threads post: a real market question, not a survey.
+
+Format exactly:
+Line 1: the question
+Line 2: blank
+Line 3: option A
+Line 4: option B
+
+Rules:
+- Question: max 140 characters. Must name a specific entity or number from the article (Fidelity, SEC, Hyperliquid, ETF, a dollar figure).
+- The question is a fork: two plausible next states. Not yes/no. Not "does this matter?".
+- Forbidden questions: "Does this change the setup?", "What do you think?", "Bullish or bearish?", "Are you buying?", "Thoughts?".
+- Options: 2-5 words each, mutually exclusive, no "Other", no "priced in" as a cop-out.
+- No hashtags, emoji, preamble, em dashes, "I think".
+
+Good:
+If Fidelity keeps 85% of ETH staking rewards, who is the ETF actually for?
+Funds
+Holders
+
+Bad:
+Does this change the setup?
+Yes, it matters
+No, already priced in
 
 Article title: {title}
 Article summary: {article.get("summary") or ""}"""
-    llm = _llm_text("Write a Threads question post.", user, 280)
-    if llm:
+    llm = _llm_text("Write a Threads question post with two answer lines.", user, 280)
+    if llm and "?" in llm and "change the setup" not in llm.lower():
         return llm
+    entity = title.split()[0] if title else "This"
     return _clip(
-        f"Does this change the setup?\n\n{title}\n\nYes, it matters\nNo, already priced in",
+        f"After {title.rstrip('.')}, what actually moves next?\n\n"
+        f"{entity} follow-through\n"
+        "Macro overwrites it",
         280,
     )
 

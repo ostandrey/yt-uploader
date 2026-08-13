@@ -3,13 +3,31 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from src.desk import db
 from src.paths import coin_wire_storage
+
+_MONTHS_UK = (
+    "",
+    "січ",
+    "лют",
+    "бер",
+    "кві",
+    "тра",
+    "чер",
+    "лип",
+    "серп",
+    "вер",
+    "жов",
+    "лис",
+    "груд",
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 STORAGE = coin_wire_storage()
@@ -57,7 +75,8 @@ def write_desk_pack(
         notify_desk_push(
             "Short ready",
             "TikTok · IG Reel · carousel on desk",
-            url="/",
+            url="/?tab=tiktok",
+            tag="cw-desk-short",
         )
     except Exception as exc:
         print(f"Desk push notify failed: {exc}")
@@ -177,7 +196,40 @@ def _editorial_path() -> Path:
     return STORAGE / "desk_editorial.json"
 
 
-def _raw_editorial_items() -> list[dict[str, Any]]:
+def _desk_tz() -> ZoneInfo:
+    name = (os.getenv("DESK_TZ") or os.getenv("TZ") or "America/New_York").strip()
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _today_key() -> str:
+    return datetime.now(_desk_tz()).strftime("%Y-%m-%d")
+
+
+def _day_key(iso: str) -> str:
+    if not iso:
+        return _today_key()
+    try:
+        ts = datetime.fromisoformat(iso)
+    except ValueError:
+        return _today_key()
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(_desk_tz()).strftime("%Y-%m-%d")
+
+
+def _day_label(day: str) -> str:
+    try:
+        ts = datetime.strptime(day, "%Y-%m-%d")
+    except ValueError:
+        return day
+    month = _MONTHS_UK[ts.month] if 1 <= ts.month <= 12 else ""
+    return f"{ts.day} {month}".strip()
+
+
+def _json_editorial_items() -> list[dict[str, Any]]:
     path = _editorial_path()
     if not path.exists():
         return []
@@ -210,33 +262,77 @@ def _raw_editorial_items() -> list[dict[str, Any]]:
     return out
 
 
-def load_editorial_items() -> list[dict[str, Any]]:
+def _raw_editorial_items() -> list[dict[str, Any]]:
+    json_items = _json_editorial_items()
+    try:
+        db.migrate_editorial_from_json(json_items)
+        rows = db.list_editorial()
+    except Exception:
+        rows = []
+    return rows or json_items
+
+
+def _enrich_editorial(item: dict[str, Any], now: datetime) -> dict[str, Any]:
+    created_at = str(item.get("created_at") or "")
+    done = bool(item.get("done"))
+    age_hours = _age_hours(created_at, now)
+    is_new = (not done) and age_hours is not None and age_hours < 8
+    kind = str(item.get("kind") or "note")
+    if kind in {"opinion", "question", "recap"}:
+        tab = "threads"
+    elif kind in {"context", "poll", "digest"}:
+        tab = "telegram"
+    else:
+        tab = "threads"
+    text = str(item.get("text") or "")
+    first = (text.splitlines()[0] if text else "").strip()
+    snip = first if len(first) <= 72 else first[:71].rstrip() + "…"
+    row = dict(item)
+    row.update(
+        {
+            "kind": kind,
+            "tab": tab,
+            "day": _day_key(created_at),
+            "is_new": is_new,
+            "badge": "НОВЕ" if is_new else ("ГОТОВО" if done else "РАНІШЕ"),
+            "badge_kind": "new" if is_new else ("done" if done else "old"),
+            "when": _short_ts(created_at) if created_at else "",
+            "age": _age_label(age_hours),
+            "snip": snip,
+            "parts": split_question_post(text) if kind == "question" else None,
+        }
+    )
+    return row
+
+
+def split_question_post(text: str) -> Optional[dict[str, str]]:
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    if len(lines) < 3:
+        return None
+    return {"question": lines[0], "a": lines[1], "b": lines[2]}
+
+
+def next_check_label(interval_minutes: int = 30) -> str:
+    now = datetime.now(_desk_tz())
+    total = now.hour * 60 + now.minute
+    step = max(int(interval_minutes), 1)
+    wait = step - (total % step)
+    if wait == step:
+        wait = step
+    return f"Наступна перевірка: ~{wait} хв"
+
+
+def load_editorial_items(*, scope: str = "today") -> list[dict[str, Any]]:
     now = datetime.now(timezone.utc)
+    today = _today_key()
     out: list[dict[str, Any]] = []
     for item in _raw_editorial_items():
-        created_at = str(item.get("created_at") or "")
-        done = bool(item.get("done"))
-        age_hours = _age_hours(created_at, now)
-        is_new = (not done) and age_hours is not None and age_hours < 8
-        kind = str(item.get("kind") or "note")
-        if kind in {"opinion", "question", "recap"}:
-            tab = "threads"
-        elif kind in {"context", "poll", "digest"}:
-            tab = "telegram"
-        else:
-            tab = "threads"
-        row = dict(item)
-        row.update(
-            {
-                "kind": kind,
-                "tab": tab,
-                "is_new": is_new,
-                "badge": "НОВЕ" if is_new else ("ГОТОВО" if done else "РАНІШЕ"),
-                "badge_kind": "new" if is_new else ("done" if done else "old"),
-                "when": _short_ts(created_at) if created_at else "",
-                "age": _age_label(age_hours),
-            }
-        )
+        row = _enrich_editorial(item, now)
+        day = str(row.get("day") or today)
+        if scope == "today" and day != today:
+            continue
+        if scope == "history" and day == today:
+            continue
         out.append(row)
     out.sort(
         key=lambda row: (
@@ -245,28 +341,68 @@ def load_editorial_items() -> list[dict[str, Any]]:
             str(row.get("created_at") or ""),
         )
     )
-    return out[:8]
+    return out
+
+
+def editorial_history_count() -> int:
+    today = _today_key()
+    return sum(1 for item in _raw_editorial_items() if _day_key(str(item.get("created_at") or "")) != today)
+
+
+def history_page() -> dict[str, Any]:
+    today = _today_key()
+    groups: dict[str, dict[str, Any]] = {}
+    now = datetime.now(timezone.utc)
+    for item in load_editorial_items(scope="history"):
+        day = str(item.get("day") or "")
+        if not day:
+            continue
+        bucket = groups.setdefault(
+            day,
+            {"day": day, "label": _day_label(day), "editorial": [], "shorts": []},
+        )
+        bucket["editorial"].append(item)
+    for short in db.list_shorts(80):
+        day = _day_key(str(short.get("updated_at") or short.get("created_at") or ""))
+        if not day or day == today:
+            continue
+        bucket = groups.setdefault(
+            day,
+            {"day": day, "label": _day_label(day), "editorial": [], "shorts": []},
+        )
+        row = dict(short)
+        row["when"] = _short_ts(str(short.get("updated_at") or ""))
+        bucket["shorts"].append(row)
+    ordered = sorted(groups.values(), key=lambda row: str(row.get("day") or ""), reverse=True)
+    from src.paths import storage_status
+
+    storage = storage_status()
+    return {
+        "groups": ordered,
+        "count": sum(len(g["editorial"]) + len(g["shorts"]) for g in ordered),
+        "storage_warn": bool(storage.get("warn_no_volume")),
+        "storage_path": storage.get("path") or "",
+    }
 
 
 def write_editorial_items(items: list[dict[str, Any]]) -> None:
     STORAGE.mkdir(parents=True, exist_ok=True)
     now = _now()
-    payload = {
-        "updated_at": now,
-        "items": [
-            {
-                "id": str(item.get("id") or f"e-{hash(str(item.get('text') or '')) & 0xFFFFF:x}"),
-                "kind": str(item.get("kind") or "note"),
-                "label": str(item.get("label") or item.get("kind") or "Copy"),
-                "text": str(item.get("text") or "").strip(),
-                "created_at": str(item.get("created_at") or now),
-                "done": bool(item.get("done")),
-            }
-            for item in items
-            if str(item.get("text") or "").strip()
-        ][:8],
-    }
+    payload_items = [
+        {
+            "id": str(item.get("id") or f"e-{hash(str(item.get('text') or '')) & 0xFFFFF:x}"),
+            "kind": str(item.get("kind") or "note"),
+            "label": str(item.get("label") or item.get("kind") or "Copy"),
+            "text": str(item.get("text") or "").strip(),
+            "created_at": str(item.get("created_at") or now),
+            "done": bool(item.get("done")),
+        }
+        for item in items
+        if str(item.get("text") or "").strip()
+    ]
+    payload = {"updated_at": now, "items": payload_items}
     _editorial_path().write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    db.replace_editorial(payload_items)
 
 
 def set_editorial_done(item_id: str, done: bool = True) -> Optional[dict[str, Any]]:
@@ -280,7 +416,10 @@ def set_editorial_done(item_id: str, done: bool = True) -> Optional[dict[str, An
     if not found:
         return None
     write_editorial_items(items)
-    enriched = next((row for row in load_editorial_items() if row.get("id") == item_id), None)
+    enriched = next(
+        (row for row in load_editorial_items(scope="all") if row.get("id") == item_id),
+        None,
+    )
     return enriched or found
 
 
@@ -343,18 +482,18 @@ def resolve_thumb(pack: dict[str, Any]) -> Optional[Path]:
 
 
 def desk_tabs(pack: dict | None, editorial: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Tab strip: platform filters + new-count badges."""
+    """Tab strip: unpublished counts (open work), not only НОВЕ."""
     threads_kinds = {"opinion", "question", "recap"}
     telegram_kinds = {"context", "poll", "digest"}
     threads_new = sum(
         1
         for item in editorial
-        if item.get("is_new") and item.get("kind") in threads_kinds
+        if (not item.get("done")) and item.get("kind") in threads_kinds
     )
     telegram_new = sum(
         1
         for item in editorial
-        if item.get("is_new") and item.get("kind") in telegram_kinds
+        if (not item.get("done")) and item.get("kind") in telegram_kinds
     )
     short_new = 0
     tiktok_new = 0
@@ -367,14 +506,12 @@ def desk_tabs(pack: dict | None, editorial: list[dict[str, Any]]) -> list[dict[s
         if not marks.get("instagram"):
             ig_new = 1
             short_new += 1
-    all_new = short_new + threads_new + telegram_new
     return [
-        {"id": "all", "label": "Все", "badge": all_new},
-        {"id": "short", "label": "Short", "badge": short_new},
         {"id": "threads", "label": "Threads", "badge": threads_new},
         {"id": "telegram", "label": "TG", "badge": telegram_new},
         {"id": "tiktok", "label": "TikTok", "badge": tiktok_new},
         {"id": "instagram", "label": "IG", "badge": ig_new},
+        {"id": "short", "label": "Short", "badge": short_new},
     ]
 
 
@@ -402,7 +539,7 @@ def stats_snapshot() -> dict[str, Any]:
         row["when"] = _short_ts(str(row.get("updated_at") or ""))
         history.append(row)
 
-    editorial = load_editorial_items()
+    editorial = load_editorial_items(scope="all")
     editorial_new = sum(1 for item in editorial if item.get("is_new"))
     editorial_open = sum(1 for item in editorial if not item.get("done"))
     editorial_done = sum(1 for item in editorial if item.get("done"))
@@ -445,6 +582,7 @@ def stats_snapshot() -> dict[str, Any]:
         "storage_path": storage.get("path") or "",
         "storage_warn": bool(storage.get("warn_no_volume") or empty and storage.get("railway")),
         "push_subs": int(storage.get("push_subs") or 0),
+        "overdue_today": _overdue_today(editorial, latest),
         "platforms_today": [
             {
                 "id": "telegram",
@@ -472,6 +610,33 @@ def stats_snapshot() -> dict[str, Any]:
             },
         ],
     }
+
+
+def _overdue_today(editorial: list[dict[str, Any]], latest: Optional[dict[str, Any]]) -> str:
+    today = _today_key()
+    bits: list[str] = []
+    threads_n = sum(
+        1
+        for item in editorial
+        if not item.get("done") and item.get("tab") == "threads" and item.get("day") == today
+    )
+    tg_n = sum(
+        1
+        for item in editorial
+        if not item.get("done") and item.get("tab") == "telegram" and item.get("day") == today
+    )
+    if threads_n:
+        bits.append(f"Threads ×{threads_n}")
+    if tg_n:
+        bits.append(f"TG ×{tg_n}")
+    marks = (latest or {}).get("marks") or {}
+    if latest and not marks.get("tiktok"):
+        bits.append("TikTok")
+    if latest and not marks.get("instagram"):
+        bits.append("IG")
+    if not bits:
+        return ""
+    return "Незапощено сьогодні: " + ", ".join(bits)
 
 
 def _short_ts(iso: str) -> str:

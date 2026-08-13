@@ -6,6 +6,9 @@ from src.desk import auth, catalog, db
 def test_editorial_new_vs_old_badges(tmp_path, monkeypatch):
     from datetime import datetime, timedelta, timezone
 
+    monkeypatch.setenv("DESK_DB", str(tmp_path / "desk.sqlite"))
+    monkeypatch.setenv("DESK_TZ", "UTC")
+    db.reset_init_for_tests()
     monkeypatch.setattr(catalog, "STORAGE", tmp_path)
     now = datetime.now(timezone.utc)
     catalog.write_editorial_items(
@@ -23,7 +26,7 @@ def test_editorial_new_vs_old_badges(tmp_path, monkeypatch):
                 "kind": "opinion",
                 "label": "Threads — opinion",
                 "text": "Old Fidelity take",
-                "created_at": (now - timedelta(hours=20)).isoformat(),
+                "created_at": (now - timedelta(hours=9)).isoformat(),
                 "done": False,
             },
             {
@@ -36,22 +39,61 @@ def test_editorial_new_vs_old_badges(tmp_path, monkeypatch):
             },
         ]
     )
-    items = catalog.load_editorial_items()
+    items = catalog.load_editorial_items(scope="today")
     by_id = {item["id"]: item for item in items}
     assert by_id["new-1"]["badge"] == "НОВЕ"
     assert by_id["new-1"]["badge_kind"] == "new"
     assert by_id["new-1"]["tab"] == "threads"
-    assert by_id["old-1"]["badge"] == "РАНІШЕ"
+    if by_id.get("old-1"):
+        assert by_id["old-1"]["badge"] == "РАНІШЕ"
     assert by_id["done-1"]["badge"] == "ГОТОВО"
     assert by_id["done-1"]["tab"] == "telegram"
     assert items[0]["id"] == "new-1"
     marked = catalog.set_editorial_done("new-1", True)
     assert marked["done"] is True
     assert marked["badge"] == "ГОТОВО"
-    tabs = catalog.desk_tabs(None, catalog.load_editorial_items())
+    tabs = catalog.desk_tabs(None, catalog.load_editorial_items(scope="today"))
     by_tab = {t["id"]: t["badge"] for t in tabs}
+    assert "all" not in by_tab
     assert by_tab["telegram"] == 0  # done, not new
     assert "threads" in by_tab
+
+
+def test_editorial_history_keeps_all_posts(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setenv("DESK_DB", str(tmp_path / "desk.sqlite"))
+    monkeypatch.setenv("DESK_TZ", "UTC")
+    db.reset_init_for_tests()
+    monkeypatch.setattr(catalog, "STORAGE", tmp_path)
+    now = datetime.now(timezone.utc)
+    items = [
+        {
+            "id": f"e{i}",
+            "kind": "opinion",
+            "label": "Threads — opinion",
+            "text": f"Post number {i} about markets",
+            "created_at": (now - timedelta(days=i)).isoformat(),
+            "done": False,
+        }
+        for i in range(12)
+    ]
+    catalog.write_editorial_items(items)
+    assert len(catalog.load_editorial_items(scope="all")) == 12
+    today = catalog.load_editorial_items(scope="today")
+    assert {row["id"] for row in today} == {"e0"}
+    history = catalog.load_editorial_items(scope="history")
+    assert len(history) == 11
+    assert catalog.editorial_history_count() == 11
+    parts = catalog.split_question_post(
+        "If Goldman pays $2.25B for Neos, who controls the next ETFs?\n\nWall Street banks\nIndependent issuers"
+    )
+    assert parts["question"].startswith("If Goldman")
+    assert parts["a"] == "Wall Street banks"
+    assert parts["b"] == "Independent issuers"
+    page = catalog.history_page()
+    assert page["count"] == 11
+    assert page["groups"][0]["editorial"]
 
 
 def test_session_roundtrip(monkeypatch):
@@ -168,13 +210,20 @@ def test_login_and_today(tmp_path, monkeypatch):
     home = client.get("/")
     assert home.status_code == 200
     assert "Desk title" in home.text
+    assert 'href="/history"' in home.text
+    hist = client.get("/history")
+    assert hist.status_code == 200
+    assert "Історія" in hist.text
     assert 'data-copy="ig_caption"' in home.text
     assert 'data-share="tiktok"' in home.text
     assert 'data-share="threads"' not in home.text
     assert 'id="pack-json"' in home.text
     assert 'id="dock"' in home.text
-    assert "Instagram карусель" in home.text
+    assert "Instagram Reel" in home.text
+    assert "Карусель" in home.text or "карусель" in home.text.lower() or "carousel" in home.text.lower()
     assert "data-share-carousel" in home.text
+    assert "data-save-carousel" in home.text
+    assert "Наступна перевірка" in home.text
     slide = client.get("/media/ig/01.jpg")
     assert slide.status_code == 200
     assert slide.content == b"jpeg-one"

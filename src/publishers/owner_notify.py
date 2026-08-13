@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from typing import Optional
+from urllib.parse import quote
 
 from src.publishers.telegram_publisher import TelegramPublisher
 
@@ -20,6 +21,21 @@ EDITORIAL_KIND = {
     "question": ("Threads", "question"),
     "context": ("TG", "context"),
     "recap": ("Threads", "weekly recap"),
+    "poll": ("TG", "poll"),
+    "digest": ("TG", "digest"),
+}
+
+KIND_TAB = {
+    "opinion": "threads",
+    "question": "threads",
+    "recap": "threads",
+    "context": "telegram",
+    "poll": "telegram",
+    "digest": "telegram",
+    "tiktok": "tiktok",
+    "instagram": "instagram",
+    "carousel": "instagram",
+    "short": "short",
 }
 
 
@@ -65,11 +81,30 @@ def format_threads_pulse_posted(*, variant: str = "", url: str = "") -> str:
     return line
 
 
-def format_desk_editorial_ready(*, kind: str, title: str = "") -> str:
+def desk_public_url() -> str:
+    return os.getenv("DESK_PUBLIC_URL", "").strip().rstrip("/")
+
+
+def desk_deep_link(*, kind: str = "", item_id: str = "", tab: str = "") -> str:
+    """Path or absolute URL to a desk tab/card. Empty host → relative /?tab=."""
+    tab = tab or KIND_TAB.get(kind, "threads")
+    query = f"tab={tab}"
+    if item_id:
+        query += f"&item={quote(str(item_id))}"
+    path = f"/?{query}"
+    base = desk_public_url()
+    return f"{base}{path}" if base else path
+
+
+def format_desk_editorial_ready(*, kind: str, title: str = "", item_id: str = "") -> str:
     platform, label = EDITORIAL_KIND.get(kind, ("Desk", kind))
     head = _clip(title, 40)
     line = f"💬 {platform} · {label} · desk ready"
-    return f"{line} · {head}" if head else line
+    if head:
+        line = f"{line} · {head}"
+    if desk_public_url():
+        line += f"\n{desk_deep_link(kind=kind, item_id=item_id)}"
+    return line
 
 
 def format_youtube_status(
@@ -142,7 +177,7 @@ def format_short_status_bundle(
     if head:
         lines.append(f"📋 {head}")
     if desk_url:
-        lines.append(f"Desk: {desk_url.rstrip('/')}/")
+        lines.append(f"Desk: {desk_url.rstrip('/')}/?tab=tiktok")
     return "\n".join(lines)
 
 
@@ -158,7 +193,7 @@ def notify_owner_status(
     if not cleaned:
         return
     body = "\n".join(cleaned)
-    if desk_url and "Desk:" not in body:
+    if desk_url and "Desk:" not in body and "/?tab=" not in body:
         body += f"\nDesk: {desk_url.rstrip('/')}/"
     try:
         publisher.notify_owner(body, buttons=buttons)
