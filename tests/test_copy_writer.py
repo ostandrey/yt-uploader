@@ -31,6 +31,9 @@ def test_rules_copy_from_article():
     assert "Bitcoin" in copy.short_title or "bitcoin" in copy.short_title.lower()
     assert len(copy.script.split("\n")) >= 4
     assert copy.ig_caption
+    assert copy.tiktok_caption
+    assert copy.tiktok_caption != copy.ig_caption
+    assert "Full story on YouTube" in copy.tiktok_caption
     assert copy.carousel_caption
     assert "Not financial advice" not in copy.ig_caption
 
@@ -82,5 +85,22 @@ def test_generate_content_merges_metadata():
     content = generate_content(article)
     assert content["source_link"] == "https://example.com/eth"
     assert content["ig_caption"]
+    assert content["tiktok_caption"]
+    assert content["tiktok_caption"] != content["ig_caption"]
     assert content["carousel_caption"]
-    assert content.get("copy_source") in ("rules", "llm")
+    assert content.get("copy_source") in ("rules", "llm", "rules_fallback")
+
+
+def test_llm_failure_tagged_as_rules_fallback(monkeypatch):
+    monkeypatch.setenv("COPY_LLM_ENABLED", "1")
+    monkeypatch.setenv("COPY_LLM_API_KEY", "sk-test")
+    monkeypatch.setattr("src.content.copy_writer._call_llm", lambda _article: None)
+    article = {
+        "title": "Bitcoin drops 4 percent after Fed holds rates",
+        "summary": "Traders cut risk after the Federal Reserve kept rates unchanged.",
+        "link": "https://example.com/a",
+        "source": "coindesk",
+        "hash": "abc123",
+    }
+    copy = generate_platform_copy(article)
+    assert copy.source == "rules_fallback"

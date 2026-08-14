@@ -24,13 +24,16 @@ CREATE TABLE IF NOT EXISTS shorts (
     video_path TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL DEFAULT '',
     ig_caption TEXT NOT NULL DEFAULT '',
+    tiktok_caption TEXT NOT NULL DEFAULT '',
     threads_text TEXT NOT NULL DEFAULT '',
     youtube_url TEXT NOT NULL DEFAULT '',
     work_dir TEXT NOT NULL DEFAULT '',
     qa_score INTEGER,
     bytes INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    copy_source TEXT NOT NULL DEFAULT '',
+    degraded TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS marks (
     short_id INTEGER NOT NULL,
@@ -76,6 +79,7 @@ def connect() -> sqlite3.Connection:
         with _lock:
             if not _initialized:
                 conn.executescript(SCHEMA)
+                _migrate_shorts(conn)
                 conn.commit()
                 _initialized = True
     return conn
@@ -84,6 +88,16 @@ def connect() -> sqlite3.Connection:
 def reset_init_for_tests() -> None:
     global _initialized
     _initialized = False
+
+
+def _migrate_shorts(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(shorts)")}
+    if "copy_source" not in cols:
+        conn.execute("ALTER TABLE shorts ADD COLUMN copy_source TEXT NOT NULL DEFAULT ''")
+    if "degraded" not in cols:
+        conn.execute("ALTER TABLE shorts ADD COLUMN degraded TEXT NOT NULL DEFAULT ''")
+    if "tiktok_caption" not in cols:
+        conn.execute("ALTER TABLE shorts ADD COLUMN tiktok_caption TEXT NOT NULL DEFAULT ''")
 
 
 def upsert_short(pack: dict[str, Any]) -> dict[str, Any]:
@@ -95,23 +109,28 @@ def upsert_short(pack: dict[str, Any]) -> dict[str, Any]:
             conn.execute(
                 """
                 INSERT INTO shorts (
-                    video_path, title, ig_caption, threads_text, youtube_url,
-                    work_dir, qa_score, bytes, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    video_path, title, ig_caption, tiktok_caption, threads_text, youtube_url,
+                    work_dir, qa_score, bytes, created_at, updated_at,
+                    copy_source, degraded
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(video_path) DO UPDATE SET
                     title=excluded.title,
                     ig_caption=excluded.ig_caption,
+                    tiktok_caption=excluded.tiktok_caption,
                     threads_text=excluded.threads_text,
                     youtube_url=excluded.youtube_url,
                     work_dir=excluded.work_dir,
                     qa_score=excluded.qa_score,
                     bytes=excluded.bytes,
-                    updated_at=excluded.updated_at
+                    updated_at=excluded.updated_at,
+                    copy_source=excluded.copy_source,
+                    degraded=excluded.degraded
                 """,
                 (
                     video_path,
                     pack.get("title") or "",
                     pack.get("ig_caption") or "",
+                    pack.get("tiktok_caption") or "",
                     pack.get("threads_text") or "",
                     pack.get("youtube_url") or "",
                     pack.get("work_dir") or "",
@@ -119,6 +138,8 @@ def upsert_short(pack: dict[str, Any]) -> dict[str, Any]:
                     int(pack.get("bytes") or 0),
                     now,
                     now,
+                    pack.get("copy_source") or "",
+                    pack.get("degraded") or "",
                 ),
             )
             conn.commit()

@@ -1,5 +1,6 @@
 """Threads news pulse text variants."""
 
+from src.content.news_filter import extract_key_bullets
 from src.content.threads_pulse import (
     build_threads_news_pulse,
     pick_pulse_variant,
@@ -41,3 +42,22 @@ def test_breaking_variant_prefix():
     assert variant == "breaking_lead" or "SEC" in text
     assert variant != "question_lead"
     assert "?" not in text
+
+
+def test_pulse_does_not_reuse_telegram_bullets():
+    article = {
+        "title": "CFTC to Meet on Crypto Regulations on Aug. 20",
+        "summary": (
+            "The CFTC will hold a meeting for its Innovation Advisory Committee "
+            "on Aug. 20 to address regulation related to crypto assets, artificial "
+            "intelligence and prediction markets."
+        ),
+        "hash": "cftc1",
+    }
+    bullets = extract_key_bullets(article, max_bullets=2)
+    text, variant = build_threads_news_pulse(article, tier="strong", seed="cftc1")
+    assert variant != "bullets"
+    assert "is the date to watch" in text.lower() or "aug" in text.lower()
+    for bullet in bullets:
+        assert bullet.lower() not in text.lower()
+    assert article["title"] not in text

@@ -5,8 +5,10 @@ Rules fallback always works. LLM is used when COPY_LLM_API_KEY is set.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
+from src.content.copy_overlap import shares_lead
 from src.content.copy_writer import chat_json, llm_configured
 from src.content.naturalize import naturalize_text
 from src.content.voice import NEWS_DESK_VOICE
@@ -88,45 +90,75 @@ Article summary: {article.get("summary") or ""}"""
     return _clip(f"{title.rstrip('.')} is the part of this week that actually matters.", 240)
 
 
+def _poll_shaped(text: str) -> bool:
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) >= 3:
+        return True
+    blob = "\n".join(lines)
+    return bool(re.search(r"(?im)^\s*(?:[ab]|1|2)[).:\-]\s+\S", blob))
+
+
+def _weak_question(text: str) -> bool:
+    if _poll_shaped(text):
+        return True
+    lower = text.lower()
+    if re.search(r"what happens (next|after)|what actually moves next|who actually captures the next", lower):
+        return True
+    if not re.search(r"\b(which|who is|who are|versus|\bvs\.?\b|actually)\b", lower):
+        return True
+    return False
+
+
+def _question_fallback(title: str, summary: str) -> str:
+    blob = f"{title} {summary}"
+    money = re.search(r"\$\s?\d[\d,]*(?:\.\d+)?\s?(?:billion|million|[BMKTbmkt])?", blob, re.I)
+    agency = re.search(
+        r"\b(CFTC|SEC|Fed|FOMC|BlackRock|Fidelity|Coinbase|Binance)\b", blob
+    )
+    entity = agency.group(0) if agency else (title.split()[0] if title else "This")
+    if agency and re.search(r"agenda|meeting|committee|AI|artificial", blob, re.I):
+        return _clip(
+            f"If {entity} is grouping crypto with AI and prediction markets on one agenda, "
+            "which one actually drives the session?",
+            180,
+        )
+    if money:
+        return _clip(
+            f"If {entity} just printed {money.group(0).strip()}, who is actually absorbing the other side?",
+            180,
+        )
+    return _clip(
+        f"If {entity} is the name on this tape, who is actually on the other side versus the headline?",
+        180,
+    )
+
+
 def question_post(article: dict[str, Any]) -> str:
     title = naturalize_text(article.get("title") or "")
-    user = f"""You write one Threads post: a real market question, not a survey.
+    summary = naturalize_text(article.get("summary") or "")
+    user = f"""You write one Threads post: a single market question. Threads has no poll.
 
-Format exactly:
-Line 1: the question
-Line 2: blank
-Line 3: option A
-Line 4: option B
+Format: one question. Optional second sentence of context. No option lines.
 
 Rules:
-- Question: max 140 characters. Must name a specific entity or number from the article (Fidelity, SEC, Hyperliquid, ETF, a dollar figure).
-- The question is a fork: two plausible next states. Not yes/no. Not "does this matter?".
-- Forbidden questions: "Does this change the setup?", "What do you think?", "Bullish or bearish?", "Are you buying?", "Thoughts?".
-- Options: 2-5 words each, mutually exclusive, no "Other", no "priced in" as a cop-out.
+- Max 180 characters. Must name a specific entity or number from the article.
+- Comparative or causal frame only: "which ... actually ...", "who is ... versus ...", "who is actually absorbing".
+- Forbidden: "what happens next", "what happens after", "who actually captures the next move", yes/no, A/B lines, "Does this change the setup?", "What do you think?", "Bullish or bearish?".
 - No hashtags, emoji, preamble, em dashes, "I think".
 
 Good:
+If the CFTC is grouping crypto with AI and prediction markets on one agenda, which one actually drives the Aug. 20 discussion?
 If Fidelity keeps 85% of ETH staking rewards, who is the ETF actually for?
-Funds
-Holders
 
 Bad:
-Does this change the setup?
-Yes, it matters
-No, already priced in
+After BlackRock Bitcoin ETF inflows hit $4.6B, what happens next?
 
 Article title: {title}
-Article summary: {article.get("summary") or ""}"""
-    llm = _llm_text("Write a Threads question post with two answer lines.", user, 280)
-    if llm and "?" in llm and "change the setup" not in llm.lower():
+Article summary: {summary}"""
+    llm = _llm_text("Write a Threads question with a which/who-actually frame. No poll options.", user, 180)
+    if llm and "?" in llm and "change the setup" not in llm.lower() and not _weak_question(llm):
         return llm
-    entity = title.split()[0] if title else "This"
-    return _clip(
-        f"After {title.rstrip('.')}, what actually moves next?\n\n"
-        f"{entity} follow-through\n"
-        "Macro overwrites it",
-        280,
-    )
+    return _question_fallback(title, summary)
 
 
 def weekly_recap(events_list: str) -> str:
@@ -157,23 +189,27 @@ Weekly events list:
 def telegram_context(article: dict[str, Any]) -> str:
     title = naturalize_text(article.get("title") or "")
     summary = naturalize_text(article.get("summary") or "")
+    lead = _first_sentence(summary)
     user = f"""Rules:
 - Max 600 characters.
 - Header: Context:
 - 4-6 sentences only.
-- Structure: what happened (1) then what led to this (1-2) then what to watch next (1-2).
+- Structure: background that is NOT in the breaking post (1-2) then what led here (1-2) then what to watch next (1-2).
+- Do NOT repeat the article title.
+- Do NOT reuse the lead sentence of the summary. Paraphrase. The operator already posted the breaking item.
 - No price predictions. No bullish/bearish. Facts and process only.
 - No hashtags. English. No em dashes.
 
 Breaking article title: {title}
+Lead sentence (do not repeat): {lead}
 Article summary: {summary}"""
     llm = _llm_text("Write a Telegram context post that follows a breaking news item.", user, 600)
-    if llm:
+    if llm and not shares_lead(llm, [title, lead]):
         return llm
-    first = _first_sentence(summary) or title
     return _clip(
-        f"Context:\n\n{first} This follows the week's existing tape, not a new thesis. "
-        "Watch the next official print or filing before calling a trend.",
+        "Context:\n\nThis is a follow-on to the breaking item, not a restatement of the headline. "
+        "The next official print or filing is the document that matters. "
+        "Treat today's alert as a calendar marker until that docket is public.",
         600,
     )
 

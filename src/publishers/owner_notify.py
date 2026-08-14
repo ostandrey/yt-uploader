@@ -154,6 +154,8 @@ def format_short_status_bundle(
     youtube_state: str = "skip",
     publish_hint: str = "",
     carousel_slides: int = 0,
+    copy_source: str = "",
+    degraded: Optional[list[str]] = None,
 ) -> str:
     """One message: one line per platform that's ready or auto-done."""
     lines = [
@@ -173,6 +175,10 @@ def format_short_status_bundle(
                 extra=f"{carousel_slides} slides",
             )
         )
+    if copy_source:
+        lines.append(f"✏️ Copy · {copy_source}")
+    if degraded:
+        lines.append("⚠ " + ", ".join(degraded))
     head = _clip(title, 56)
     if head:
         lines.append(f"📋 {head}")

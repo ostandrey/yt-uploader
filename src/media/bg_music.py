@@ -10,25 +10,50 @@ from pathlib import Path
 import imageio_ffmpeg
 import requests
 
-DEFAULT_BG_PATH = Path("data/assets/background.mp3")
-DEFAULT_BG_URL = (
-    "https://cdn.pixabay.com/audio/2022/03/24/"
-    "audio_2de51d759c.mp3"
+from src.paths import ROOT, data_root
+
+DEFAULT_BG_NAME = "background.mp3"
+DOWNLOAD_URLS = (
+    "https://cdn.pixabay.com/audio/2022/03/24/audio_2de51d759c.mp3",
+    "https://cdn.pixabay.com/audio/2022/05/27/audio_1808fbf07a.mp3",
+    "https://cdn.pixabay.com/audio/2021/08/09/audio_dc39bde8b6.mp3",
 )
+_HEADERS = {"User-Agent": "CoinWire/1.0 (shorts bed)"}
 
 
-def ensure_background_music(target: Path = DEFAULT_BG_PATH) -> Path | None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists() and target.stat().st_size > 10_000:
-        return target
+def _candidate_paths() -> list[Path]:
+    return [
+        data_root() / "assets" / DEFAULT_BG_NAME,
+        ROOT / "data" / "assets" / DEFAULT_BG_NAME,
+        Path(__file__).resolve().parent / "assets" / DEFAULT_BG_NAME,
+        Path("data/assets") / DEFAULT_BG_NAME,
+    ]
 
-    try:
-        response = requests.get(DEFAULT_BG_URL, timeout=60)
-        response.raise_for_status()
-        target.write_bytes(response.content)
-        return target
-    except requests.RequestException:
-        return None
+
+def _usable(path: Path) -> bool:
+    return path.is_file() and path.stat().st_size > 10_000
+
+
+def ensure_background_music(target: Path | None = None) -> Path | None:
+    for path in _candidate_paths():
+        if _usable(path):
+            return path
+
+    dest = Path(target) if target is not None else data_root() / "assets" / DEFAULT_BG_NAME
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    for url in DOWNLOAD_URLS:
+        try:
+            response = requests.get(url, timeout=60, headers=_HEADERS)
+            response.raise_for_status()
+            if len(response.content) < 10_000:
+                continue
+            dest.write_bytes(response.content)
+            print(f"      Background music downloaded → {dest}")
+            return dest
+        except requests.RequestException as exc:
+            print(f"      Background music download skipped ({url.split('/')[-1]}): {exc}")
+    print("      Background music missing: no local file and download failed")
+    return None
 
 
 def mix_background_music(
@@ -39,7 +64,7 @@ def mix_background_music(
 ) -> Path:
     """Sidechain ducking: music drops when voice speaks."""
     music_path = music_path or ensure_background_music()
-    if not music_path or not music_path.exists():
+    if not music_path or not _usable(music_path):
         return voice_path
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
@@ -50,17 +75,22 @@ def mix_background_music(
         f"threshold=0.015:ratio=8:attack=50:release=500:level_sc=1[ducked];"
         f"[voice][ducked]amix=inputs=2:duration=first:weights=1 0.35[aout]"
     )
-    subprocess.run(
-        [
-            ffmpeg, "-y",
-            "-i", str(voice_path),
-            "-i", str(music_path),
-            "-filter_complex", filter_graph,
-            "-map", "[aout]",
-            "-c:a", "libmp3lame", "-b:a", "192k",
-            str(output_path),
-        ],
-        check=True,
-        capture_output=True,
-    )
+    try:
+        subprocess.run(
+            [
+                ffmpeg, "-y",
+                "-i", str(voice_path),
+                "-i", str(music_path),
+                "-filter_complex", filter_graph,
+                "-map", "[aout]",
+                "-c:a", "libmp3lame", "-b:a", "192k",
+                str(output_path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        err = (exc.stderr or b"").decode("utf-8", errors="replace")[-400:]
+        print(f"      Background music mix failed, voice only: {err}")
+        return voice_path
     return output_path

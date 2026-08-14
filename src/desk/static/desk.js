@@ -184,6 +184,7 @@
 
   function captionFor(kind) {
     if (kind === "carousel") return pack.carousel_caption || "";
+    if (kind === "tiktok") return pack.tiktok_caption || pack.ig_caption || "";
     return pack.ig_caption || "";
   }
 

@@ -134,11 +134,18 @@ def test_write_and_load_latest(tmp_path, monkeypatch):
         threads_text="hello threads",
         youtube_url="https://youtu.be/x",
         qa_score=71,
+        copy_source="rules_fallback",
+        degraded=["no_music", "llm_failed"],
     )
     latest = catalog.load_latest()
     assert latest is not None
     assert latest["ig_caption"] == "hello ig"
+    assert latest["tiktok_caption"]
+    assert latest["tiktok_caption"] != latest["ig_caption"]
     assert latest["threads_text"] == "hello threads"
+    assert latest["copy_source"] == "rules_fallback"
+    assert "no_music" in catalog.parse_degraded(latest["degraded"])
+    assert catalog.degraded_labels(latest["degraded"])[0]
     assert Path(latest["video_path"]).name == "short.mp4"
     assert latest["id"]
     marked = db.set_mark(latest["id"], "tiktok", True)
@@ -215,6 +222,7 @@ def test_login_and_today(tmp_path, monkeypatch):
     assert hist.status_code == 200
     assert "Історія" in hist.text
     assert 'data-copy="ig_caption"' in home.text
+    assert 'data-copy="tiktok_caption"' in home.text
     assert 'data-share="tiktok"' in home.text
     assert 'data-share="threads"' not in home.text
     assert 'id="pack-json"' in home.text

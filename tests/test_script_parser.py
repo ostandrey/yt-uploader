@@ -47,6 +47,20 @@ def test_token_category_mapping():
     assert token_category("fed") == "macro"
     assert token_category("hack") == "security"
     assert token_category("defi") == "defi"
+    assert token_category("cftc") == "regulation"
+
+
+def test_cftc_sentence_prefers_regulation_over_crypto():
+    terms = sentence_broll_terms("The CFTC meets August 20 on crypto rules.")
+    assert any(t.category == "regulation" for t in terms)
+    assert all(t.token != "crypto" for t in terms)
+
+
+def test_plan_broll_segments_cut_length():
+    segments = plan_broll_segments(["Bitcoin fell sharply today."], [6.0])
+    assert len(segments) >= 3
+    for seg in segments:
+        assert 1.5 <= seg["duration"] <= 2.0
 
 
 def test_plan_broll_segments_has_category():

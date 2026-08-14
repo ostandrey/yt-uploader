@@ -26,7 +26,7 @@ from src.content.copy_polish import (
 from src.content.naturalize import naturalize_text
 from src.content.short_script_generator import ShortScriptGenerator
 from src.content.voice import NEWS_DESK_VOICE, SHORT_SCRIPT_CTA
-from src.publishers.captions import build_caption, build_carousel_caption
+from src.publishers.captions import build_caption, build_carousel_caption, build_tiktok_caption
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ Return JSON:
     "Line 2-4: one fact each, max 18 words per line.",
     "Final line exactly: {cta}"
   ],
-  "ig_caption": "Reel/TikTok caption. First 125 chars: hook with number or name. Then 2-4 fact sentences, one per line. Then blank line, then exactly: Full breakdown on YouTube. Then blank line, then exactly 5 hashtags. Pick 4 from #bitcoin #crypto #cryptonews #btc #ethereum #sec #etf #federalreserve #cryptoregulation #blockchain plus 1 topic tag (#ripple #solana #binance #coinbase) only if the article is clearly about that ticker. Count hashtags before output. Max 2200 chars.",
+  "ig_caption": "IG Reel caption only, not TikTok. First 125 chars: hook with number or name. Then 2-4 fact sentences, one per line. Then blank line, then exactly: Full breakdown on YouTube. Then blank line, then exactly 5 hashtags. Pick 4 from #bitcoin #crypto #cryptonews #btc #ethereum #sec #etf #federalreserve #cryptoregulation #blockchain plus 1 topic tag (#ripple #solana #binance #coinbase) only if the article is clearly about that ticker. Count hashtags before output. Max 2200 chars.",
   "carousel_caption": "Carousel caption. Line 1: what the slides cover without spoiling. Optional line 2: one intriguing fact. Then: Swipe for context. Then: Source: {source}. Then exactly 4 hashtags from the approved set. Max 2200 chars."
 }}"""
 
@@ -59,14 +59,19 @@ class PlatformCopy:
     script: str
     ig_caption: str
     carousel_caption: str
+    tiktok_caption: str = ""
     source: str = "rules"
 
     def as_content_patch(self) -> Dict[str, str]:
+        tiktok = self.tiktok_caption or build_tiktok_caption(
+            self.ig_caption, title=self.short_title, article_text=self.ig_caption
+        )
         return {
             "title": self.short_title,
             "script": self.script,
             "ig_caption": self.ig_caption,
             "carousel_caption": self.carousel_caption,
+            "tiktok_caption": tiktok,
             "threads_text": "",
             "threads_question": "",
             "copy_source": self.source,
@@ -129,11 +134,15 @@ def _rules_copy(article: Dict[str, Any], *, seed: str = "") -> PlatformCopy:
         base.get("description", ""),
         source=source,
     )
+    tiktok = build_tiktok_caption(
+        ig, title=base["title"], article_text=article_blob
+    )
     return PlatformCopy(
         short_title=base["title"],
         script=base["script"],
         ig_caption=ig,
         carousel_caption=carousel,
+        tiktok_caption=tiktok,
         source="rules",
     )
 
@@ -183,6 +192,7 @@ def _validate_llm_payload(data: dict, article: Dict[str, Any]) -> Optional[Platf
         script=script,
         ig_caption=ig,
         carousel_caption=carousel,
+        tiktok_caption=build_tiktok_caption(ig, title=title, article_text=article_blob),
         source="llm",
     )
 
@@ -214,6 +224,9 @@ def generate_platform_copy(
         llm_copy = _call_llm(article)
         if llm_copy:
             return llm_copy
+        fallback = _rules_copy(article, seed=seed)
+        fallback.source = "rules_fallback"
+        return fallback
     return _rules_copy(article, seed=seed)
 
 

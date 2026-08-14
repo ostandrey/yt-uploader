@@ -139,6 +139,7 @@ def _publish_desk_pack(
     *,
     youtube_url: str = "",
     qa_score=None,
+    degraded: Optional[list] = None,
 ) -> None:
     try:
         write_desk_pack(
@@ -146,9 +147,12 @@ def _publish_desk_pack(
             video_path=video_path,
             work_dir=work_dir,
             ig_caption=content.get("ig_caption", ""),
+            tiktok_caption=content.get("tiktok_caption", ""),
             threads_text=content.get("threads_text", ""),
             youtube_url=youtube_url,
             qa_score=qa_score,
+            copy_source=str(content.get("copy_source") or ""),
+            degraded=degraded or content.get("degraded") or [],
         )
     except Exception as exc:
         print(f"Desk pack write failed: {exc}")
@@ -192,6 +196,8 @@ def _notify_short_ready(
         youtube_state=youtube_state,
         publish_hint=publish_hint,
         carousel_slides=carousel_slides,
+        copy_source=str(content.get("copy_source") or ""),
+        degraded=list(content.get("degraded") or []),
     )
     notify_owner_status(tg, [status], buttons=buttons)
 
@@ -315,7 +321,20 @@ def run_pipeline(
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     meta["description"] = content["description"]
     meta["source_link"] = content["source_link"]
+    meta["script"] = content.get("script") or ""
+    meta["copy_source"] = content.get("copy_source") or "rules"
+    degraded: list[str] = []
+    if "music_bed" in meta and not meta.get("music_bed"):
+        degraded.append("no_music")
+    if meta.get("sfx_generated"):
+        degraded.append("sfx_tones")
+    if meta["copy_source"] == "rules_fallback":
+        degraded.append("llm_failed")
+    meta["degraded"] = degraded
+    content["degraded"] = degraded
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    if degraded:
+        print(f"Degraded: {', '.join(degraded)}")
 
     thumb_path = Path(meta.get("thumbnail", ""))
 
@@ -349,7 +368,7 @@ def run_pipeline(
         except Exception as log_exc:
             print(f"Editorial log skip: {log_exc}")
         _render_ig_carousel(content, work_dir)
-        _publish_desk_pack(content, video_path, work_dir)
+        _publish_desk_pack(content, video_path, work_dir, degraded=degraded)
         try:
             tg = TelegramPublisher()
             _notify_short_ready(
@@ -490,6 +509,7 @@ def run_pipeline(
         work_dir,
         youtube_url=youtube_url,
         qa_score=(result.get("shorts_qa") or {}).get("score"),
+        degraded=degraded,
     )
 
     try:

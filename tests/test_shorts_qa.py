@@ -44,6 +44,36 @@ def test_score_rules_penalizes_long_outro_and_charts():
     codes = {item.code: item.severity for item in findings}
     assert codes["duration"] in {"warn", "fail"}
     assert codes["outro"] == "fail"
+    assert codes["hook_entity"] == "fail"
+    assert codes["copy_path"] == "warn"
+
+
+def test_hook_opens_with_entity():
+    from src.media.shorts_qa import hook_opens_with_entity
+
+    assert hook_opens_with_entity("The CFTC meets August 20 on crypto rules.")
+    assert hook_opens_with_entity("Bitcoin dropped 4 percent after the Fed.")
+    assert not hook_opens_with_entity("Traders are reacting to the news.")
+
+
+def test_rules_hook_without_entity_is_penalized():
+    score, findings = _score_rules(
+        {
+            "duration_sec": 24,
+            "sentences": 5,
+            "outro_sec": 1.2,
+            "stat_overlays": ["CFTC"],
+            "broll_sources": {"local": 3, "chart": 0},
+            "broll_segments": 4,
+            "copy_source": "rules",
+            "music_bed": False,
+        },
+        "Traders are reacting to the news.\nFollow Coin Wire for daily crypto news.",
+    )
+    codes = {item.code: item.severity for item in findings}
+    assert codes["hook_entity"] == "fail"
+    assert codes["music"] == "warn"
+    assert score < 90
 
 
 def test_phone_repost_caption_has_platforms():

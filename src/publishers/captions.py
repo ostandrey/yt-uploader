@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import List, Optional
 
 from src.content.copy_guard import looks_like_filename_slug, safe_caption
@@ -53,6 +54,7 @@ TAG_HINTS = {
 DEFAULT_HASHTAGS = APPROVED_HASHTAGS[:6]
 DISCLAIMER = "Not financial advice. News and education only."
 IG_CTA = "Full breakdown on YouTube."
+TT_CTA = "Full story on YouTube."
 CAROUSEL_CTA = "Swipe for context."
 
 
@@ -170,6 +172,56 @@ def build_carousel_caption(
         lines.append(f"Source: {source}")
     lines.append(_tag_line(f"{title} {description}", 4))
     caption = "\n\n".join(p for p in lines if p)
+    return caption[:max_len]
+
+
+def build_tiktok_caption(
+    ig_caption: str = "",
+    *,
+    title: str = "",
+    article_text: str = "",
+    max_len: int = 900,
+) -> str:
+    """Shorter clipped caption. Not a copy of the IG Reel block."""
+    raw = naturalize_text(ig_caption or title or "")
+    body_lines: list[str] = []
+    found_tags: list[str] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            found_tags.extend(re.findall(r"#(\w+)", stripped))
+            continue
+        if stripped.lower().rstrip(".") in {
+            "full breakdown on youtube",
+            "full story on youtube",
+        }:
+            continue
+        body_lines.append(stripped)
+    hook = body_lines[0] if body_lines else naturalize_text(title)
+    extra = body_lines[1] if len(body_lines) > 1 else ""
+    if len(hook) > 100:
+        hook = hook[:99].rsplit(" ", 1)[0].rstrip(".,;:") + "."
+    lines = [hook]
+    if extra:
+        if len(extra) > 110:
+            extra = extra[:109].rsplit(" ", 1)[0].rstrip(".,;:") + "."
+        lines.append(extra)
+    lines.append(TT_CTA)
+    blob = article_text or f"{title} {raw}"
+    tags = pick_ig_hashtag_tags(blob, 4)
+    if found_tags:
+        cleaned = []
+        for tag in found_tags:
+            low = tag.lower()
+            if low not in cleaned:
+                cleaned.append(low)
+            if len(cleaned) >= 4:
+                break
+        tags = cleaned or tags
+    lines.append(" ".join(f"#{t.lstrip('#')}" for t in tags[:4]))
+    caption = "\n".join(p for p in lines if p)
     return caption[:max_len]
 
 

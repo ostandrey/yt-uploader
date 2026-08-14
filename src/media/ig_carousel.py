@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from PIL import Image, ImageDraw
@@ -26,6 +26,15 @@ _MONEY_CORE = (
     r"\$\s?\d[\d,]*(?:\.\d+)?\s?(?:billion|million|trillion|[BMKTbmkt])?"
     r"|\d+(?:\.\d+)?\s?%"
     r"|\d+(?:\.\d+)?\s?(?:billion|million|trillion)\b"
+)
+_DATE = re.compile(
+    r"\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
+    r"Dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,\s*\d{4})?\b",
+    re.I,
+)
+_AGENCY = re.compile(
+    r"\b(Federal Reserve|the Fed|CFTC|FOMC|OCC|FDIC|ESMA|FCA|Treasury|SEC|Fed)\b"
 )
 _MONEY = re.compile(rf"({_MONEY_CORE})", re.I)
 _MONEY_WITH_PREP = re.compile(
@@ -139,7 +148,11 @@ def _context_copy(desc: str, script: str, title: str) -> str:
 
 
 def build_what_moved(content: dict[str, Any]) -> list[dict[str, str]]:
-    """Four slides. Never invent a number that is not in the article."""
+    """Four slides. Never invent a number that is not in the article.
+
+    Slide 2 tiebreak: money figure, else WHEN (specific date), else WHO (agency).
+    Date wins over named entity when both are in the story.
+    """
     title = naturalize_text(content.get("title") or "Coin Wire")
     desc = naturalize_text(content.get("description") or "")
     script = naturalize_text(content.get("script") or "")
@@ -148,12 +161,40 @@ def build_what_moved(content: dict[str, Any]) -> list[dict[str, str]]:
     source = _source_label(content)
 
     hook = _clip_words(_scrub(title), 16)
+    fact_slide: Optional[dict[str, str]] = None
     if money:
-        fact_big = ascii_safe(money.group(1).strip())
-        fact_sub = _fact_sub(title, desc, money)
+        fact_slide = {
+            "kind": "fact",
+            "rubric": "WHAT MOVED",
+            "title": ascii_safe(money.group(1).strip()),
+            "body": _fact_sub(title, desc, money),
+        }
     else:
-        fact_big = _clip_words(_scrub(title), 8)
-        fact_sub = "The number is in the story, not a forecast."
+        dated = _DATE.search(blob)
+        agency = _AGENCY.search(blob)
+        if dated:
+            leftover = _DATE.sub(" ", hook)
+            leftover = re.sub(r"\s+", " ", leftover).strip(" .,-")
+            fact_slide = {
+                "kind": "fact",
+                "rubric": "WHAT MOVED",
+                "kicker": "When",
+                "title": ascii_safe(dated.group(0).strip()),
+                "body": leftover or "Date from the story. Not a forecast.",
+            }
+        elif agency:
+            name = agency.group(0)
+            if name.lower() in {"the fed", "fed"}:
+                name = "Fed"
+            leftover = re.sub(re.escape(agency.group(0)), " ", hook, flags=re.I)
+            leftover = re.sub(r"\s+", " ", leftover).strip(" .,-")
+            fact_slide = {
+                "kind": "fact",
+                "rubric": "WHAT MOVED",
+                "kicker": "Who",
+                "title": ascii_safe(name),
+                "body": leftover or "Named in the story.",
+            }
 
     context = _context_copy(desc, script, title)
     last: dict[str, str] = {
@@ -166,12 +207,12 @@ def build_what_moved(content: dict[str, Any]) -> list[dict[str, str]]:
     if source:
         last["meta"] = f"Source: {source}"
 
-    return [
-        {"kind": "hook", "rubric": "WHAT MOVED", "title": hook},
-        {"kind": "fact", "rubric": "WHAT MOVED", "title": fact_big, "body": fact_sub},
-        {"kind": "body", "rubric": "WHAT MOVED", "kicker": "Context", "title": context},
-        last,
-    ]
+    slides = [{"kind": "hook", "rubric": "WHAT MOVED", "title": hook}]
+    if fact_slide:
+        slides.append(fact_slide)
+    slides.append({"kind": "body", "rubric": "WHAT MOVED", "kicker": "Context", "title": context})
+    slides.append(last)
+    return slides
 
 
 def carousel_caption(content: dict[str, Any]) -> str:

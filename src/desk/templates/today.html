@@ -79,9 +79,19 @@
           {% if pack.qa_score is not none %}
           <span class="badge {% if pack.qa_score >= 70 %}badge-ok{% else %}badge-warn{% endif %}">QA {{ pack.qa_score }}/100</span>
           {% endif %}
+          {% if pack.copy_source == "llm" %}
+          <span class="badge badge-ok">LLM copy</span>
+          {% elif pack.copy_source == "rules_fallback" %}
+          <span class="badge badge-warn">Rules fallback</span>
+          {% elif pack.copy_source %}
+          <span class="badge badge-info">Rules copy</span>
+          {% endif %}
           {% if pack.bytes %}<span class="badge badge-info">{{ (pack.bytes / 1000000) | round(1) }} MB</span>{% endif %}
           {% if not pack.caption_ready %}<span class="badge badge-warn">Немає опису</span>{% endif %}
         </div>
+        {% if pack.degraded_labels %}
+        <div class="warn-banner">Деградація: {{ pack.degraded_labels | join(" · ") }}</div>
+        {% endif %}
         {% if pack.youtube_url %}
         <a class="yt-link" href="{{ pack.youtube_url }}" target="_blank" rel="noopener">YouTube</a>
         {% endif %}
@@ -104,12 +114,14 @@
         </div>
         <div class="actions">
           <button type="button" class="btn-primary" data-share="tiktok">Share</button>
-          <button type="button" class="btn-secondary" data-copy="ig_caption">Copy</button>
+          <button type="button" class="btn-secondary" data-copy="tiktok_caption">Copy</button>
         </div>
         {% if pack.id %}<label class="mark"><input type="checkbox" data-mark="tiktok" {% if pack.marks.tiktok %}checked{% endif %}><span>Вже запостив</span></label>{% endif %}
         <details open>
           <summary>Опис</summary>
-          {% if pack.ig_caption %}
+          {% if pack.tiktok_caption %}
+          <textarea readonly data-select>{{ pack.tiktok_caption }}</textarea>
+          {% elif pack.ig_caption %}
           <textarea readonly data-select>{{ pack.ig_caption }}</textarea>
           {% else %}
           <p class="placeholder-caption">Опис ще не згенеровано.</p>

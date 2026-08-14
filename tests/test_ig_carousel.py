@@ -27,6 +27,29 @@ def test_what_moved_uses_number_from_article_only():
 def test_what_moved_does_not_invent_money():
     slides = build_what_moved({"title": "SEC delays a crypto rule decision", "description": ""})
     assert "$" not in slides[1]["title"]
+    assert slides[1]["kind"] == "fact"
+    assert slides[1]["title"] == "SEC"
+
+
+def test_what_moved_uses_date_not_echoed_headline():
+    slides = build_what_moved(
+        {
+            "title": "CFTC to Meet on Crypto Regulations on Aug. 20",
+            "description": (
+                "The CFTC will hold a meeting for its Innovation Advisory Committee "
+                "on Aug. 20 to address regulation related to crypto assets."
+            ),
+        }
+    )
+    assert len(slides) == 4
+    assert slides[0]["kind"] == "hook"
+    assert slides[1]["kind"] == "fact"
+    assert "Aug" in slides[1]["title"]
+    assert slides[1].get("kicker") == "When"
+    assert "CFTC to Meet" not in slides[1]["title"]
+    assert slides[0]["title"] != slides[1]["title"]
+    blob = " ".join(f"{s.get('title', '')} {s.get('body', '')}" for s in slides)
+    assert "$" not in blob
 
 
 def test_context_drops_url_and_does_not_echo_headline():

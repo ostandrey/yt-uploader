@@ -526,11 +526,17 @@ class FFmpegShortRenderer:
         audio_extended = work_dir / "voiceover_extended.mp3"
         _append_silence(tts.audio_path, OUTRO_DURATION_SEC, audio_extended)
         mixed_audio = work_dir / "voiceover_mixed.mp3"
-        mixed_path = mix_background_music(audio_extended, mixed_audio)
+        music_bed = False
+        try:
+            mixed_path = mix_background_music(audio_extended, mixed_audio)
+        except Exception as exc:
+            print(f"      Background music mix failed: {exc}")
+            mixed_path = audio_extended
         if mixed_path != audio_extended:
+            music_bed = True
             print("      Background music added (ducked under voice)")
         else:
-            print("      No background music (place data/assets/background.mp3)")
+            print("      No background music (voice only)")
         segment_durs = [s["duration"] for s in segments]
         sfx_events = plan_sfx_events(
             segment_durs,
@@ -540,9 +546,10 @@ class FFmpegShortRenderer:
             outro_sec=OUTRO_DURATION_SEC,
         )
         final_audio = work_dir / "voiceover_final.mp3"
-        mix_sfx(mixed_path, final_audio, sfx_events, work_dir)
+        _, sfx_generated = mix_sfx(mixed_path, final_audio, sfx_events, work_dir)
         if sfx_events:
-            print(f"      SFX: {len(sfx_events)} hits (ding/whoosh/thud)")
+            kind = "generated tones" if sfx_generated else "files"
+            print(f"      SFX: {len(sfx_events)} hits (ding/whoosh/thud, {kind})")
         mixed_path = final_audio
         with_audio = work_dir / "with_audio.mp4"
         _merge_audio_video(concat_final, mixed_path, with_audio)
@@ -583,6 +590,8 @@ class FFmpegShortRenderer:
             "whisper": use_whisper and len(word_entries) > 0,
             "hook_from_start": True,
             "outro_sec": OUTRO_DURATION_SEC,
+            "music_bed": music_bed,
+            "sfx_generated": sfx_generated,
         }
         (work_dir / "metadata.json").write_text(
             json.dumps(metadata, indent=2), encoding="utf-8",

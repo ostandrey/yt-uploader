@@ -37,6 +37,25 @@ HISTORY_FILE = STORAGE / "desk_history.json"
 PENDING_FILE = STORAGE / "pending_uploads.json"
 USED_FILE = STORAGE / "used_short_articles.json"
 
+DEGRADED_UA = {
+    "no_music": "немає музики",
+    "sfx_tones": "SFX з тонів, не файли",
+    "llm_failed": "LLM не спрацював — rules copy",
+}
+
+
+def parse_degraded(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        return [str(item).strip() for item in raw if str(item).strip()]
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def degraded_labels(raw: Any) -> list[str]:
+    return [DEGRADED_UA.get(flag, flag) for flag in parse_degraded(raw)]
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -51,11 +70,16 @@ def write_desk_pack(
     threads_text: str = "",
     youtube_url: str = "",
     qa_score: Optional[int] = None,
+    copy_source: str = "",
+    degraded: Optional[list[str]] = None,
+    tiktok_caption: str = "",
 ) -> dict[str, Any]:
     video_path = Path(video_path)
+    flags = [str(item) for item in (degraded or []) if str(item).strip()]
     pack = {
         "title": title.strip(),
         "ig_caption": (ig_caption or "").strip(),
+        "tiktok_caption": (tiktok_caption or "").strip(),
         "threads_text": (threads_text or "").strip(),
         "youtube_url": (youtube_url or "").strip(),
         "video_path": str(video_path),
@@ -63,7 +87,15 @@ def write_desk_pack(
         "updated_at": _now(),
         "qa_score": qa_score,
         "bytes": video_path.stat().st_size if video_path.is_file() else 0,
+        "copy_source": (copy_source or "").strip(),
+        "degraded": ",".join(flags),
     }
+    if not pack["tiktok_caption"] and pack["ig_caption"]:
+        from src.publishers.captions import build_tiktok_caption
+
+        pack["tiktok_caption"] = build_tiktok_caption(
+            pack["ig_caption"], title=pack["title"]
+        )
     STORAGE.mkdir(parents=True, exist_ok=True)
     LATEST_FILE.write_text(json.dumps(pack, indent=2), encoding="utf-8")
     sync_carousel(work_dir)
@@ -303,7 +335,6 @@ def _enrich_editorial(item: dict[str, Any], now: datetime) -> dict[str, Any]:
             "when": _short_ts(created_at) if created_at else "",
             "age": _age_label(age_hours),
             "snip": snip,
-            "parts": split_question_post(text) if kind == "question" else None,
         }
     )
     return row

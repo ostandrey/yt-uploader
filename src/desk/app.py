@@ -116,10 +116,16 @@ def _public_pack(pack: dict | None) -> dict | None:
     marks = pack.get("marks") or {name: False for name in db.PLATFORMS}
     ig = safe_caption(str(pack.get("ig_caption") or ""))
     carousel = safe_caption(catalog.carousel_caption_text())
+    tt = safe_caption(str(pack.get("tiktok_caption") or ""))
+    if not tt and ig:
+        from src.publishers.captions import build_tiktok_caption
+
+        tt = build_tiktok_caption(ig, title=str(pack.get("title") or ""))
     return {
         "id": pack.get("id"),
         "title": display_title(str(pack.get("title") or "")),
         "ig_caption": ig,
+        "tiktok_caption": tt,
         "youtube_url": pack.get("youtube_url") or "",
         "qa_score": pack.get("qa_score"),
         "bytes": pack.get("bytes") or 0,
@@ -129,6 +135,9 @@ def _public_pack(pack: dict | None) -> dict | None:
         "carousel": [p.name for p in catalog.list_carousel_slides()],
         "caption_ready": bool(ig),
         "fallback": bool(pack.get("fallback")),
+        "copy_source": str(pack.get("copy_source") or ""),
+        "degraded": catalog.parse_degraded(pack.get("degraded")),
+        "degraded_labels": catalog.degraded_labels(pack.get("degraded")),
     }
 
 

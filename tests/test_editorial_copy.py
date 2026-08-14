@@ -1,5 +1,7 @@
 """Rules fallbacks for editorial copy (no LLM)."""
 
+import re
+
 from src.content.editorial_copy import (
     news_flash,
     opinion_hook,
@@ -46,8 +48,13 @@ def test_question_and_context(monkeypatch):
     ctx = telegram_context({**ARTICLE, "tier": "breaking"})
     assert "?" in q
     assert "Does this change the setup" not in q
-    assert "BlackRock" in q or "ETF" in q or "inflows" in q.lower()
+    assert "what happens next" not in q.lower()
+    assert re.search(r"which|who is|actually", q, re.I)
+    assert "BlackRock" in q or "ETF" in q or "$4.6" in q
+    assert len([ln for ln in q.splitlines() if ln.strip()]) <= 2
     assert "Context" in ctx or "context" in ctx.lower()
+    assert "Issuers reported the fastest pace" not in ctx
+    assert ARTICLE["title"] not in ctx
     assert "—" not in ctx
     assert "—" not in q
 

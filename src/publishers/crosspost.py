@@ -16,6 +16,7 @@ from typing import Any, Optional
 
 from src.publishers.captions import (
     build_caption,
+    build_tiktok_caption,
     should_add_engagement_question,
 )
 from src.media.instagram_feed_image import create_instagram_feed_assets
@@ -111,6 +112,9 @@ def run_crosspost(
         threads_text = f"{threads_text}\n\n{youtube_url}"[:500]
 
     ig_caption = ig_caption_override.strip() or caption
+    tt_caption = build_tiktok_caption(
+        ig_caption, title=title, article_text=f"{title} {description}"
+    )
 
     # --- TikTok (local file) ---
     if want_tiktok:
@@ -122,7 +126,7 @@ def run_crosspost(
         else:
             try:
                 print("[crosspost] TikTok: uploading...")
-                results["tiktok"] = publisher.upload_video(video_path, ig_caption)
+                results["tiktok"] = publisher.upload_video(video_path, tt_caption)
                 print(f"[crosspost] TikTok: {results['tiktok'].get('status')}")
             except Exception as exc:
                 log.exception("TikTok crosspost failed")

@@ -120,6 +120,41 @@ PEXELS_QUERIES: dict[str, list[str]] = {
         "legal documents financial compliance",
         "government hearing courtroom",
     ],
+    "cftc": [
+        "government hearing courtroom",
+        "capitol building washington dc",
+        "financial regulation documents",
+    ],
+    "fomc": [
+        "federal reserve building exterior",
+        "central bank press conference",
+        "interest rate chart economy graph",
+    ],
+    "occ": [
+        "financial regulation documents",
+        "government office building washington",
+        "compliance audit office",
+    ],
+    "fdic": [
+        "us government building exterior",
+        "bank regulation documents",
+        "financial compliance office",
+    ],
+    "esma": [
+        "european parliament building",
+        "financial regulation documents",
+        "government hearing courtroom",
+    ],
+    "fca": [
+        "london financial district skyline",
+        "uk government building",
+        "financial regulation documents",
+    ],
+    "committee": [
+        "congressional hearing room",
+        "government committee meeting",
+        "policy makers conference table",
+    ],
     "regulation": [
         "financial regulation documents",
         "compliance audit office",
@@ -233,6 +268,14 @@ TOKEN_CATEGORIES: dict[str, str] = {
     "lower": "macro",
     "falling": "bitcoin",
     "sec": "regulation",
+    "cftc": "regulation",
+    "fomc": "macro",
+    "occ": "regulation",
+    "fdic": "regulation",
+    "esma": "regulation",
+    "fca": "regulation",
+    "committee": "regulation",
+    "etf": "macro",
     "regulation": "regulation",
     "lawsuit": "regulation",
     "hack": "security",
@@ -294,19 +337,31 @@ def pick_fallback_query(kind: str = "default") -> BrollTerm:
     )
 
 
+AGENCY_TOKENS = frozenset(
+    {"cftc", "sec", "fomc", "occ", "fdic", "esma", "fca", "fed", "treasury", "committee"}
+)
+GENERIC_CRYPTO_TOKENS = frozenset({"crypto", "cryptocurrency"})
+
+
 def sentence_broll_terms(sentence: str) -> List[BrollTerm]:
     """Return 1-3 B-roll search terms derived from a sentence."""
     tokens = _tokenize_for_search(sentence)
     terms: List[BrollTerm] = []
     seen_tokens: set[str] = set()
+    skip_generic = any(t in AGENCY_TOKENS for t in tokens)
 
     for token in tokens:
-        if token in PEXELS_QUERIES and token not in seen_tokens:
-            terms.append(pick_pexels_query(token))
-            seen_tokens.add(token)
+        if token not in PEXELS_QUERIES or token in seen_tokens:
+            continue
+        if skip_generic and token in GENERIC_CRYPTO_TOKENS:
+            continue
+        terms.append(pick_pexels_query(token))
+        seen_tokens.add(token)
 
     if not terms:
-        if any(t in tokens for t in ("bitcoin", "btc", "crypto")):
+        if any(t in tokens for t in AGENCY_TOKENS):
+            terms.append(pick_pexels_query("cftc" if "cftc" in tokens else "sec"))
+        elif any(t in tokens for t in ("bitcoin", "btc", "crypto")):
             terms.append(pick_pexels_query("bitcoin"))
         elif any(t in tokens for t in ("fed", "federal", "reserve", "rates")):
             terms.append(pick_fallback_query("macro"))
@@ -326,8 +381,8 @@ def sentence_search_keywords(sentence: str) -> List[str]:
 def plan_broll_segments(
     sentences: List[str],
     sentence_durations: List[float],
-    min_sec: float = 2.0,
-    max_sec: float = 2.5,
+    min_sec: float = 1.5,
+    max_sec: float = 2.0,
 ) -> List[dict]:
     """Fast cuts every 1.5–2s, rotating keywords within each sentence."""
     segments: List[dict] = []

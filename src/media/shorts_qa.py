@@ -11,6 +11,7 @@ import base64
 import json
 import logging
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +32,60 @@ SOFT_FILLER = (
     "this headline could shift",
     "developing story",
 )
+
+HOOK_ENTITIES = frozenset(
+    {
+        "bitcoin",
+        "ethereum",
+        "btc",
+        "eth",
+        "cftc",
+        "sec",
+        "fed",
+        "fomc",
+        "etf",
+        "etfs",
+        "blackrock",
+        "fidelity",
+        "coinbase",
+        "binance",
+        "powell",
+        "treasury",
+    }
+)
+HOOK_STOP = frozenset({"the", "a", "an", "this", "that", "after", "as", "for"})
+
+
+def hook_opens_with_entity(script: str) -> bool:
+    """True when the first three spoken words include a number or named entity."""
+    first = ""
+    for line in (script or "").splitlines():
+        if line.strip():
+            first = line.strip()
+            break
+    if not first:
+        return False
+    words = first.split()[:3]
+    blob = " ".join(words)
+    if re.search(r"\d|\$|%", blob):
+        return True
+    for index, word in enumerate(words):
+        bare = re.sub(r"[^A-Za-z0-9]", "", word)
+        if not bare:
+            continue
+        if bare.lower() in HOOK_ENTITIES:
+            return True
+        if len(bare) >= 2 and bare.isupper():
+            return True
+        if (
+            index > 0
+            and len(bare) >= 4
+            and bare[0].isupper()
+            and bare[1:].islower()
+            and bare.lower() not in HOOK_STOP
+        ):
+            return True
+    return False
 
 
 @dataclass
@@ -171,6 +226,36 @@ def _score_rules(meta: Dict[str, Any], script: str) -> tuple[int, List[QaFinding
         findings.append(QaFinding("interest", "warn", f"soft filler: {filler[0]}"))
     else:
         findings.append(QaFinding("interest", "pass", "no known filler templates"))
+
+    copy_source = str(meta.get("copy_source") or "rules")
+    if copy_source == "llm":
+        findings.append(QaFinding("copy_path", "pass", "LLM rewrite"))
+    elif copy_source == "rules_fallback":
+        score -= 6
+        findings.append(QaFinding("copy_path", "warn", "LLM failed, rules fallback"))
+    else:
+        findings.append(QaFinding("copy_path", "warn", "rules-only script"))
+
+    if copy_source != "llm" and not hook_opens_with_entity(script):
+        score -= 18
+        findings.append(
+            QaFinding(
+                "hook_entity",
+                "fail",
+                "rules hook needs a number or name in the first 3 words",
+            )
+        )
+    elif hook_opens_with_entity(script):
+        findings.append(QaFinding("hook_entity", "pass", "hook opens with number/name"))
+
+    if meta.get("music_bed") is False:
+        score -= 8
+        findings.append(QaFinding("music", "warn", "voice-only, no music bed"))
+    elif meta.get("music_bed"):
+        findings.append(QaFinding("music", "pass", "ducked music bed"))
+
+    if meta.get("sfx_generated"):
+        findings.append(QaFinding("sfx", "warn", "SFX fell back to generated tones"))
 
     return max(0, min(100, score)), findings
 

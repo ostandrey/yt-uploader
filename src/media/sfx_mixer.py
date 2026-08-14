@@ -28,15 +28,15 @@ SFX_RECIPES = {
 SFX_VOLUME = {"ding": 0.35, "whoosh": 0.18, "thud": 0.28}
 
 
-def _ensure_sfx(name: str, work_dir: Path) -> Path:
+def _ensure_sfx(name: str, work_dir: Path) -> tuple[Path, bool]:
     asset = SFX_FILES[name]
     if asset.exists() and asset.stat().st_size > 500:
-        return asset
+        return asset, False
 
     work_dir.mkdir(parents=True, exist_ok=True)
     target = work_dir / f"{name}_gen.mp3"
     if target.exists() and target.stat().st_size > 500:
-        return target
+        return target, True
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     lavfi_src, af_filter = SFX_RECIPES[name]
@@ -51,7 +51,7 @@ def _ensure_sfx(name: str, work_dir: Path) -> Path:
         check=True,
         capture_output=True,
     )
-    return target
+    return target, True
 
 
 def plan_sfx_events(
@@ -84,11 +84,11 @@ def mix_sfx(
     output_path: Path,
     events: List[Tuple[float, str]],
     work_dir: Path,
-) -> Path:
+) -> tuple[Path, bool]:
     if not events:
         import shutil
         shutil.copy2(audio_path, output_path)
-        return output_path
+        return output_path, False
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -96,9 +96,11 @@ def mix_sfx(
     inputs = ["-i", str(audio_path)]
     filter_parts: List[str] = []
     sfx_labels: List[str] = []
+    generated = False
 
     for index, (time_sec, name) in enumerate(events):
-        sfx_path = _ensure_sfx(name, work_dir)
+        sfx_path, used_tone = _ensure_sfx(name, work_dir)
+        generated = generated or used_tone
         inputs.extend(["-i", str(sfx_path)])
         label = f"sfx{index}"
         delay_ms = int(time_sec * 1000)
@@ -126,4 +128,4 @@ def mix_sfx(
         check=True,
         capture_output=True,
     )
-    return output_path
+    return output_path, generated

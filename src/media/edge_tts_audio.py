@@ -21,6 +21,40 @@ DEFAULT_RATE = "+8%"
 SENTENCE_PAUSE_SEC = 0.15
 WORDS_PER_LINE = 4
 BOUNDARY_TYPES = ("WordBoundary", "SentenceBoundary")
+_SSML_TAG = re.compile(r"<[^>]+>")
+_EMPHASIS_NAMES = frozenset(
+    {
+        "bitcoin",
+        "ethereum",
+        "btc",
+        "eth",
+        "cftc",
+        "sec",
+        "fed",
+        "fomc",
+        "occ",
+        "fdic",
+        "esma",
+        "fca",
+        "etf",
+        "etfs",
+        "blackrock",
+        "fidelity",
+        "coinbase",
+        "binance",
+        "treasury",
+        "powell",
+    }
+)
+_EMPHASIS_TOKEN = re.compile(
+    r"\$\d[\d,]*(?:\.\d+)?[BMKTbmkt]?|"
+    r"\d[\d,]*(?:\.\d+)?%|"
+    r"\d+(?:\.\d+)?|"
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|"
+    r"Dec(?:ember)?)\.?"
+    r"|[A-Za-z][A-Za-z']*"
+)
 
 
 WordEntry = Tuple[float, float, str]
@@ -51,6 +85,47 @@ def _srt_time_to_seconds(srt_time: str) -> float:
     return int(h) * 3600 + int(m) * 60 + int(s) + int(millis) / 1000
 
 
+def _xml_escape(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def emphasize_ssml(sentence: str) -> str:
+    """Wrap numbers and named entities so Edge TTS bumps pitch/rate."""
+    if not sentence.strip() or "<prosody" in sentence:
+        return sentence
+
+    def wrap_token(raw: str) -> str:
+        bare = re.sub(r"[^A-Za-z0-9%$]", "", raw)
+        lower = bare.lower()
+        hit = (
+            any(ch.isdigit() for ch in bare)
+            or "%" in raw
+            or "$" in raw
+            or lower in _EMPHASIS_NAMES
+            or (len(bare) >= 2 and bare.isupper())
+        )
+        if not hit:
+            return _xml_escape(raw)
+        return (
+            f'<prosody pitch="+10Hz" rate="-12%">{_xml_escape(raw)}</prosody>'
+        )
+
+    parts: List[str] = []
+    cursor = 0
+    for match in _EMPHASIS_TOKEN.finditer(sentence):
+        if match.start() > cursor:
+            parts.append(_xml_escape(sentence[cursor : match.start()]))
+        parts.append(wrap_token(match.group(0)))
+        cursor = match.end()
+    if cursor < len(sentence):
+        parts.append(_xml_escape(sentence[cursor:]))
+    return "".join(parts) or _xml_escape(sentence)
+
+
+def strip_ssml(text: str) -> str:
+    return _SSML_TAG.sub("", text).replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+
+
 def _split_sentences(text: str) -> List[str]:
     chunks = re.split(r"(?<=[.!?])\s+", text.strip())
     return [chunk.strip() for chunk in chunks if chunk.strip()]
@@ -78,7 +153,7 @@ def _parse_srt_entries(srt_content: str) -> List[Tuple[float, float, str]]:
         if len(parts) < 3 or " --> " not in parts[1]:
             continue
         start_raw, end_raw = parts[1].split(" --> ")
-        text = " ".join(parts[2:]).strip()
+        text = strip_ssml(" ".join(parts[2:]).strip())
         if not text:
             continue
         start = _srt_time_to_seconds(start_raw)
@@ -130,7 +205,7 @@ def _shift_srt(srt_content: str, offset_sec: float, index_start: int) -> tuple[s
         start = _srt_time_to_seconds(start_raw) + offset_sec
         end = _srt_time_to_seconds(end_raw) + offset_sec
         last_end = max(last_end, end)
-        text = " ".join(parts[2:]).strip()
+        text = strip_ssml(" ".join(parts[2:]).strip())
         shifted.append(
             f"{idx}\n{_format_srt_time(start)} --> {_format_srt_time(end)}\n{text}"
         )
@@ -146,7 +221,9 @@ async def _generate_sentence(
     output_path: Path,
     pitch: str = "+0Hz",
 ) -> tuple[Path, str, float]:
-    communicate = edge_tts.Communicate(sentence, voice, rate=rate, pitch=pitch)
+    communicate = edge_tts.Communicate(
+        emphasize_ssml(sentence), voice, rate=rate, pitch=pitch
+    )
     submaker = edge_tts.SubMaker()
 
     with open(output_path, "wb") as audio_file:
