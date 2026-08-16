@@ -9,7 +9,9 @@ from urllib.parse import urlparse
 
 from PIL import Image, ImageDraw
 
+from src.content.copy_overlap import overlap_ratio
 from src.content.naturalize import naturalize_text
+from src.content.short_script_generator import _DANGLING_WORDS, _last_content_word, is_complete_clause
 from src.media.fonts import ascii_safe, load_font
 
 W, H = 1080, 1350
@@ -46,18 +48,27 @@ _JUNK_LINE = re.compile(
     r"^(source|read more|follow|full story|subscribe|swipe|http)\b",
     re.I,
 )
-_STOP = {
-    "a",
-    "an",
-    "and",
-    "for",
-    "in",
-    "of",
-    "on",
-    "the",
-    "to",
-    "with",
-}
+_BODY_NAME = re.compile(
+    r"\b((?:the\s+)?[A-Z][\w'-]+(?:\s+[A-Z][\w'-]+){0,5}\s+"
+    r"(?:Committee|Commission|Board|Council|Authority))\b"
+)
+_SCOPE_TAIL = re.compile(
+    r"\b(?:to address|related to|covering|focused on)\s+([^.]{10,160})",
+    re.I,
+)
+_SCOPE_LEAD = re.compile(
+    r"^(?:regulation related to|regulation of|the regulation of)\s+",
+    re.I,
+)
+_MONTH_STUB = re.compile(
+    r"\b(?:on|for|by|at)?\s*(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
+    r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|"
+    r"Nov(?:ember)?|Dec(?:ember)?)\.?\b"
+)
+_CLAUSE_MARK = re.compile(
+    r"\s+(?:to address|in order to|including)\s+",
+    re.I,
+)
 
 
 def _clip_words(text: str, n: int) -> str:
@@ -67,6 +78,21 @@ def _clip_words(text: str, n: int) -> str:
     return " ".join(words[:n])
 
 
+def _finish_clause(text: str) -> str:
+    """Drop a trailing preposition/conjunction left after a date or word cut."""
+    text = re.sub(r"\s+", " ", text or "").strip(" .,-;:")
+    while text and _last_content_word(text) in _DANGLING_WORDS:
+        prev = text.rfind(" ")
+        if prev < 0:
+            return ""
+        text = text[:prev].rstrip(" .,-;:")
+    return text
+
+
+def _clip_clause(text: str, n: int) -> str:
+    return _finish_clause(_clip_words(text, n))
+
+
 def _scrub(text: str) -> str:
     raw = _URL.sub(" ", naturalize_text(text or ""))
     raw = re.sub(r"\b(?:Read more|Source|Follow)\s*:?\s*", " ", raw, flags=re.I)
@@ -74,9 +100,11 @@ def _scrub(text: str) -> str:
 
 
 def _sentences(text: str, max_n: int = 8) -> list[str]:
-    raw = re.split(r"(?<=[.!?])\s+", naturalize_text(text or ""))
+    protected = _DATE.sub(lambda m: m.group(0).replace(".", "\u2024"), text or "")
+    raw = re.split(r"(?<=[.!?])\s+", naturalize_text(protected))
     out: list[str] = []
     for sent in raw:
+        sent = sent.replace("\u2024", ".")
         if _JUNK_LINE.match(sent.strip()):
             continue
         sent = _scrub(sent)
@@ -92,15 +120,10 @@ def _sentences(text: str, max_n: int = 8) -> list[str]:
     return out
 
 
-def _tokens(text: str) -> set[str]:
-    return {w for w in re.findall(r"[a-z0-9$]+", text.lower()) if w not in _STOP}
-
-
 def _distinct_from(text: str, other: str) -> bool:
-    a, b = _tokens(text), _tokens(other)
-    if not a or not b:
+    if not text or not other:
         return True
-    return len(a & b) / len(a) < 0.65
+    return overlap_ratio(text, other) < 0.55
 
 
 def _source_label(content: dict[str, Any]) -> str:
@@ -119,31 +142,78 @@ def _fact_sub(title: str, desc: str, money: re.Match[str]) -> str:
     leftover = re.sub(r"\s+", " ", leftover).strip(" .,-")
     leftover = re.sub(r"\bfor\s+in\b", "in", leftover, flags=re.I)
     leftover = re.sub(r"\s+in\s+(ETFs?|crypto|bitcoin|ether(?:eum)?)\s*$", "", leftover, flags=re.I)
-    leftover = _clip_words(leftover, 14)
+    leftover = _clip_clause(leftover, 14)
     if leftover and _distinct_from(leftover, money.group(1)):
         return leftover
     for sent in _sentences(desc, 3):
         if money.group(1).lower() not in sent.lower() and _distinct_from(sent, title):
-            return _clip_words(sent, 14)
+            clipped = _clip_clause(sent, 14)
+            if clipped:
+                return clipped
     return "The figure reported in the story."
 
 
-def _context_copy(desc: str, script: str, title: str) -> str:
-    parts: list[str] = []
+def _without_when(text: str) -> str:
+    cleaned = _DATE.sub(" ", text or "")
+    cleaned = _MONTH_STUB.sub(" ", cleaned)
+    return _finish_clause(cleaned)
+
+
+def _entity_scope_line(blob: str, title: str) -> str:
+    """One new fact: named body + remit. Words stay in the article."""
+    body_m = _BODY_NAME.search(blob)
+    scope_m = _SCOPE_TAIL.search(blob)
+    if not body_m or not scope_m:
+        return ""
+    body = re.sub(r"^(?:the|its)\s+", "", body_m.group(1), flags=re.I).strip()
+    if not body or overlap_ratio(body, title) >= 0.8:
+        return ""
+    scope = _SCOPE_LEAD.sub("", _scrub(scope_m.group(1)))
+    scope = _clip_clause(_without_when(scope), 14)
+    if not scope or len(scope.split()) < 2:
+        return ""
+    if scope[0].isupper() and not _BODY_NAME.match(scope):
+        scope = scope[0].lower() + scope[1:]
+    line = f"The {body} will address {scope}."
+    if overlap_ratio(line, title) >= 0.55:
+        return ""
+    if not is_complete_clause(line):
+        return ""
+    return line
+
+
+def _context_candidates(desc: str, script: str) -> list[str]:
+    out: list[str] = []
     for src in (desc, script):
         for sent in _sentences(src, 8):
-            if not _distinct_from(sent, title):
-                continue
-            if any(not _distinct_from(sent, prev) for prev in parts):
-                continue
-            clipped = _clip_words(sent, 16).rstrip(".")
-            if not clipped:
-                continue
-            parts.append(clipped)
-            if len(parts) >= 2:
-                return ". ".join(parts) + "."
-    if parts:
-        return parts[0].rstrip(".") + "."
+            out.append(sent)
+            for part in _CLAUSE_MARK.split(sent):
+                part = _scrub(part)
+                if part and part not in out:
+                    out.append(part)
+    return out
+
+
+def _context_copy(desc: str, script: str, title: str) -> str:
+    composed = _entity_scope_line(f"{desc} {script}", title)
+    if composed:
+        return composed
+    scored: list[tuple[float, int, str]] = []
+    for raw in _context_candidates(desc, script):
+        text = _clip_clause(_without_when(raw), 18)
+        if not text or len(text.split()) < 6:
+            continue
+        if not text[0].isupper():
+            continue
+        if not _distinct_from(text, title):
+            continue
+        if not is_complete_clause(text):
+            continue
+        words = len(text.split())
+        scored.append((-overlap_ratio(text, title), -abs(words - 14), text))
+    if scored:
+        scored.sort(reverse=True)
+        return scored[0][2].rstrip(".") + "."
     return "The outlet published the details. We don't add numbers."
 
 
@@ -160,7 +230,7 @@ def build_what_moved(content: dict[str, Any]) -> list[dict[str, str]]:
     money = _MONEY.search(blob)
     source = _source_label(content)
 
-    hook = _clip_words(_scrub(title), 16)
+    hook = _clip_clause(_scrub(title), 16)
     fact_slide: Optional[dict[str, str]] = None
     if money:
         fact_slide = {
@@ -173,8 +243,7 @@ def build_what_moved(content: dict[str, Any]) -> list[dict[str, str]]:
         dated = _DATE.search(blob)
         agency = _AGENCY.search(blob)
         if dated:
-            leftover = _DATE.sub(" ", hook)
-            leftover = re.sub(r"\s+", " ", leftover).strip(" .,-")
+            leftover = _finish_clause(_DATE.sub(" ", hook))
             fact_slide = {
                 "kind": "fact",
                 "rubric": "WHAT MOVED",
@@ -186,8 +255,7 @@ def build_what_moved(content: dict[str, Any]) -> list[dict[str, str]]:
             name = agency.group(0)
             if name.lower() in {"the fed", "fed"}:
                 name = "Fed"
-            leftover = re.sub(re.escape(agency.group(0)), " ", hook, flags=re.I)
-            leftover = re.sub(r"\s+", " ", leftover).strip(" .,-")
+            leftover = _finish_clause(re.sub(re.escape(agency.group(0)), " ", hook, flags=re.I))
             fact_slide = {
                 "kind": "fact",
                 "rubric": "WHAT MOVED",

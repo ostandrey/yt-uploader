@@ -326,6 +326,8 @@ def run_pipeline(
     degraded: list[str] = []
     if "music_bed" in meta and not meta.get("music_bed"):
         degraded.append("no_music")
+    elif meta.get("music_source") == "synth":
+        degraded.append("music_synth")
     if meta.get("sfx_generated"):
         degraded.append("sfx_tones")
     if meta["copy_source"] == "rules_fallback":

@@ -39,6 +39,7 @@ USED_FILE = STORAGE / "used_short_articles.json"
 
 DEGRADED_UA = {
     "no_music": "немає музики",
+    "music_synth": "музика — synth pad (не Pixabay)",
     "sfx_tones": "SFX з тонів, не файли",
     "llm_failed": "LLM не спрацював — rules copy",
 }

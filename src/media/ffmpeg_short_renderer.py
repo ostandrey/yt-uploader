@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import List, Optional
 import imageio_ffmpeg
 from PIL import Image, ImageDraw
-from src.media.bg_music import mix_background_music
+from src.media.bg_music import mix_background_music, resolve_background_music
 from src.media.chart_fallback import create_chart_card_video
 from src.media.edge_tts_audio import TTSResult, generate_voiceover
 from src.media.karaoke_ass import build_karaoke_ass
@@ -527,15 +527,17 @@ class FFmpegShortRenderer:
         _append_silence(tts.audio_path, OUTRO_DURATION_SEC, audio_extended)
         mixed_audio = work_dir / "voiceover_mixed.mp3"
         music_bed = False
+        music_file, music_source = resolve_background_music()
         try:
-            mixed_path = mix_background_music(audio_extended, mixed_audio)
+            mixed_path = mix_background_music(audio_extended, mixed_audio, music_file)
         except Exception as exc:
             print(f"      Background music mix failed: {exc}")
             mixed_path = audio_extended
         if mixed_path != audio_extended:
             music_bed = True
-            print("      Background music added (ducked under voice)")
+            print(f"      Background music added, ducked under voice ({music_source})")
         else:
+            music_source = "none"
             print("      No background music (voice only)")
         segment_durs = [s["duration"] for s in segments]
         sfx_events = plan_sfx_events(
@@ -591,6 +593,7 @@ class FFmpegShortRenderer:
             "hook_from_start": True,
             "outro_sec": OUTRO_DURATION_SEC,
             "music_bed": music_bed,
+            "music_source": music_source,
             "sfx_generated": sfx_generated,
         }
         (work_dir / "metadata.json").write_text(

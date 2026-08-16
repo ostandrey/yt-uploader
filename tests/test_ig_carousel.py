@@ -37,7 +37,8 @@ def test_what_moved_uses_date_not_echoed_headline():
             "title": "CFTC to Meet on Crypto Regulations on Aug. 20",
             "description": (
                 "The CFTC will hold a meeting for its Innovation Advisory Committee "
-                "on Aug. 20 to address regulation related to crypto assets."
+                "on Aug. 20 to address regulation related to crypto assets, "
+                "artificial intelligence and prediction markets."
             ),
         }
     )
@@ -48,6 +49,16 @@ def test_what_moved_uses_date_not_echoed_headline():
     assert slides[1].get("kicker") == "When"
     assert "CFTC to Meet" not in slides[1]["title"]
     assert slides[0]["title"] != slides[1]["title"]
+    body = slides[1].get("body") or ""
+    assert not body.lower().endswith(" on")
+    assert "CFTC to Meet on Crypto Regulations" in body
+    context = slides[2]["title"]
+    assert "Innovation Advisory Committee" in context
+    assert "prediction" in context.lower()
+    assert "Aug" not in context
+    assert not context.lower().rstrip(".").endswith((" on", " to", " for", " of"))
+    assert len(context.split()) <= 22
+    assert context.rstrip(".") != slides[0]["title"].rstrip(".")
     blob = " ".join(f"{s.get('title', '')} {s.get('body', '')}" for s in slides)
     assert "$" not in blob
 
