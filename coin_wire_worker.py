@@ -59,10 +59,9 @@ def _load_config() -> dict:
         return yaml.safe_load(handle)
 
 
-def _run_script(script: str, *args: str) -> bool:
+def _run_script(script: str, *args: str, quiet_ok: bool = False) -> bool:
     cmd = [PYTHON, str(ROOT / script), *args]
     label = script.replace("_", " ")
-    log.info("Running %s ...", label)
     env = {
         **os.environ,
         "PYTHONIOENCODING": "utf-8",
@@ -77,13 +76,17 @@ def _run_script(script: str, *args: str) -> bool:
         errors="replace",
         env=env,
     )
-    if result.stdout:
-        for line in result.stdout.strip().splitlines():
+    stdout = (result.stdout or "").strip()
+    failed = result.returncode != 0
+    if not quiet_ok or stdout or failed:
+        log.info("Running %s ...", label)
+        for line in stdout.splitlines():
             log.info("  %s", line)
-    if result.returncode != 0:
+    if failed:
         log.error("FAILED %s (%s): %s", label, result.returncode, result.stderr.strip())
         return False
-    log.info("OK: %s", label)
+    if not quiet_ok or stdout:
+        log.info("OK: %s", label)
     return True
 
 
@@ -100,7 +103,7 @@ def job_publish_pending() -> None:
 
 
 def job_telegram_bot() -> None:
-    _run_script("poll_telegram_commands.py")
+    _run_script("poll_telegram_commands.py", quiet_ok=True)
 
 
 def job_weekly_digest() -> None:
@@ -113,6 +116,45 @@ def job_threads_recap() -> None:
 
 def job_telegram_poll() -> None:
     _run_script("post_editorial.py", "--poll")
+
+
+def _refresh_latest_carousel() -> None:
+    """Re-render desk carousel from the last Short so old duplicate slides update."""
+    import json
+
+    from src.desk.catalog import load_latest, sync_carousel
+    from src.media.ig_carousel import render_what_moved
+    from src.paths import coin_wire_storage
+
+    pack = load_latest()
+    if not pack:
+        log.info("Carousel refresh: no latest Short on desk")
+        return
+    work = Path(str(pack.get("work_dir") or ""))
+    meta: dict = {}
+    if work.is_dir() and (work / "metadata.json").is_file():
+        try:
+            meta = json.loads((work / "metadata.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            meta = {}
+    title = str(pack.get("title") or meta.get("title") or "").strip()
+    if not title:
+        log.info("Carousel refresh: latest pack has no title")
+        return
+    out_dir = work if work.is_dir() else coin_wire_storage() / "renders" / "carousel_refresh"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = render_what_moved(
+        {
+            "title": title,
+            "description": str(meta.get("description") or ""),
+            "script": str(meta.get("script") or ""),
+            "source_link": str(meta.get("source_link") or ""),
+        },
+        out_dir,
+        fetch_stock=False,
+    )
+    sync_carousel(out_dir)
+    log.info("Carousel refresh: %d slides for %s", len(paths), title[:60])
 
 
 def job_cleanup() -> None:
@@ -215,6 +257,11 @@ def main() -> None:
             log.info("Freed %s MB by dropping B-roll cache on volume", pruned.get("freed_mb"))
     except Exception as exc:
         log.warning("B-roll prune skipped: %s", exc)
+
+    try:
+        _refresh_latest_carousel()
+    except Exception as exc:
+        log.warning("Carousel refresh skipped: %s", exc)
 
     schedule_cfg = automation.get("schedule", {})
     timezone = automation.get("timezone", "UTC")
@@ -347,6 +394,11 @@ def main() -> None:
         log.info("Telegram polls: Wed/Fri %s", ", ".join(poll_times))
 
     log.info("Worker ready at %s", datetime.now().isoformat())
+    log.info(
+        "Real jobs log as post_crypto_news / run_coin_wire_pipeline / post_editorial. "
+        "Telegram bot poll is silent unless you send a command."
+    )
+    logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
 
     try:
         scheduler.start()
