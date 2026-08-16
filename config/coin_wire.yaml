@@ -120,6 +120,7 @@ automation:
   log_level: "INFO"
   storage:
     retention_days: 7          # delete local MP4 + render dirs older than this
+    keep_latest_videos: 3      # if volume still >75% full, keep only newest N Shorts
     cleanup_time: "03:00"      # daily cleanup (channel timezone)
   schedule:
     telegram_floor: ["08:00", "12:00", "17:00"]   # minimum posts by these times

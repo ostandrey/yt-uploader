@@ -50,6 +50,20 @@ def storage_status() -> dict:
     root = data_root()
     vol_env = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
     mounted = _path_is_persistent(root) if on_railway else True
+    disk: dict = {}
+    try:
+        import shutil
+
+        usage = shutil.disk_usage(root)
+        total = max(usage.total, 1)
+        disk = {
+            "total_gb": round(usage.total / (1024**3), 2),
+            "used_gb": round(usage.used / (1024**3), 2),
+            "free_gb": round(usage.free / (1024**3), 2),
+            "used_pct": round(100 * usage.used / total, 1),
+        }
+    except OSError:
+        disk = {}
     return {
         "path": str(storage),
         "data_root": str(root),
@@ -63,6 +77,7 @@ def storage_status() -> dict:
         "volume_env": vol_env,
         "volume_mounted": mounted,
         "warn_no_volume": on_railway and not mounted,
+        "disk": disk,
     }
 
 

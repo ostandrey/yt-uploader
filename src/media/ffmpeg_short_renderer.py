@@ -596,5 +596,10 @@ class FFmpegShortRenderer:
         (work_dir / "metadata.json").write_text(
             json.dumps(metadata, indent=2), encoding="utf-8",
         )
+        from src.storage_cleanup import strip_render_dir
+
+        stripped = strip_render_dir(work_dir)
+        if stripped:
+            print(f"      Freed {stripped / (1024 * 1024):.1f} MB of render leftovers")
         print(f"Done: {final_path}")
         return final_path

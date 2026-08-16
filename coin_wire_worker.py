@@ -158,12 +158,14 @@ def _refresh_latest_carousel() -> None:
 
 
 def job_cleanup() -> None:
-    from src.storage_cleanup import cleanup_old_media
+    from src.storage_cleanup import reclaim_volume
 
     config = _load_config()
     storage = config.get("automation", {}).get("storage", {})
-    retention_days = int(storage.get("retention_days", 7))
-    cleanup_old_media(retention_days=retention_days)
+    reclaim_volume(
+        retention_days=int(storage.get("retention_days", 7)),
+        keep_latest_videos=int(storage.get("keep_latest_videos", 3)),
+    )
 
 
 def _parse_hhmm(time_str: str) -> tuple[int, int]:
@@ -202,13 +204,17 @@ def _preflight() -> None:
     from src.paths import storage_status
 
     st = storage_status()
+    disk = st.get("disk") or {}
     log.info(
-        "Storage %s | sqlite=%s videos=%s editorial=%s push_subs=%s",
+        "Storage %s | sqlite=%s videos=%s editorial=%s push_subs=%s | disk %s%% (%s/%s GB)",
         st["path"],
         st["sqlite"],
         st["videos"],
         st["editorial"],
         st["push_subs"],
+        disk.get("used_pct", "?"),
+        disk.get("used_gb", "?"),
+        disk.get("total_gb", "?"),
     )
     if st.get("warn_no_volume"):
         log.warning(
@@ -242,26 +248,30 @@ def main() -> None:
         log.warning("Desk did not start: %s", exc)
 
     _preflight()
-    _sync_broll_background()
     config = _load_config()
     automation = config.get("automation", {})
     storage_cfg = automation.get("storage", {})
     retention_days = int(storage_cfg.get("retention_days", 7))
+    keep_latest = int(storage_cfg.get("keep_latest_videos", 3))
 
-    from src.storage_cleanup import cleanup_old_media, prune_broll_library
+    from src.storage_cleanup import reclaim_volume
 
-    cleanup_old_media(retention_days=retention_days)
     try:
-        pruned = prune_broll_library()
-        if pruned.get("pruned"):
-            log.info("Freed %s MB by dropping B-roll cache on volume", pruned.get("freed_mb"))
+        reclaimed = reclaim_volume(
+            retention_days=retention_days,
+            keep_latest_videos=keep_latest,
+        )
+        if reclaimed.get("freed_mb"):
+            log.info("Freed %s MB from volume on start", reclaimed.get("freed_mb"))
     except Exception as exc:
-        log.warning("B-roll prune skipped: %s", exc)
+        log.warning("Volume reclaim skipped: %s", exc)
 
     try:
         _refresh_latest_carousel()
     except Exception as exc:
         log.warning("Carousel refresh skipped: %s", exc)
+
+    _sync_broll_background()
 
     schedule_cfg = automation.get("schedule", {})
     timezone = automation.get("timezone", "UTC")
@@ -273,7 +283,6 @@ def main() -> None:
     floor_times: list[str] = schedule_cfg.get(
         "telegram_floor", schedule_cfg.get("telegram", ["08:00", "12:00", "17:00"])
     )
-    storage_cfg = automation.get("storage", {})
     cleanup_time: str = storage_cfg.get("cleanup_time", "03:00")
     tg_cfg = config.get("publishing", {}).get("telegram", {})
     yt_cfg = config.get("publishing", {}).get("youtube", {})

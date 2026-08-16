@@ -28,8 +28,9 @@ SKIP_DIR_NAMES = {"_rejected", "_qa_work", "_clip_work"}
 SYNC_SUFFIXES = {".mp4", ".meta.json", ".json"}
 DEFAULT_PREFIX = "broll_library"
 # Hobby Railway volume is 5 GB — never fill it with the full R2 library.
-_MIN_FREE_BYTES = 800 * 1024 * 1024
-_MAX_USED_RATIO = 0.80
+_MIN_FREE_BYTES = 1200 * 1024 * 1024
+_MAX_USED_RATIO = 0.55
+_HOBBY_VOLUME_BYTES = 8 * 1024**3
 
 
 @dataclass
@@ -239,6 +240,14 @@ def download_library(
     }
 
 
+def volume_too_small_for_library(path: Path) -> bool:
+    """Hobby 5 GB volumes cannot hold the R2 clip library."""
+    try:
+        return shutil.disk_usage(path).total <= _HOBBY_VOLUME_BYTES
+    except OSError:
+        return False
+
+
 def ensure_library_on_start(
     *,
     min_local_clips: int = 5,
@@ -254,6 +263,17 @@ def ensure_library_on_start(
     if not cfg:
         log.info("B-roll sync skipped (no S3 credentials)")
         return None
+    cfg.library_root.mkdir(parents=True, exist_ok=True)
+    if volume_too_small_for_library(cfg.library_root):
+        try:
+            total = shutil.disk_usage(cfg.library_root).total
+        except OSError:
+            total = 0
+        log.info(
+            "B-roll sync skipped: %.1f GB volume — live Pexels instead of a local library",
+            total / (1024**3),
+        )
+        return {"skipped": "small_volume", "total_gb": round(total / (1024**3), 2)}
 
     local_mp4 = [
         p
