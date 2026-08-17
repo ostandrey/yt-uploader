@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
-from src.content.copy_overlap import shares_lead
+from src.content.copy_overlap import shares_lead, split_sentences
 from src.content.copy_writer import chat_json, llm_configured
 from src.content.naturalize import naturalize_text
 from src.content.voice import NEWS_DESK_VOICE
@@ -184,6 +184,96 @@ Weekly events list:
         normalized.append(f"- {item}" if item else line)
     body = "This week in crypto:\n" + "\n".join(normalized)
     return _clip(body, 500)
+
+
+_CONTRAST = re.compile(r"\b(but|still|yet|meanwhile)\b", re.I)
+_HASH_OR_EMOJI = re.compile(
+    r"#\w+|[\U0001F300-\U0001FAFF]|[\U0001F1E0-\U0001F1FF]|[\u2600-\u27BF]|[\uFE0F]"
+)
+REFLECTION_MAX = 700
+REFLECTION_OVERLAP = 0.70
+
+
+def _reflection_ok(text: str, banned: list[str]) -> bool:
+    text = (text or "").strip()
+    if not text or len(text) > REFLECTION_MAX:
+        return False
+    if "?" in text or _HASH_OR_EMOJI.search(text):
+        return False
+    if "\u2014" in text or "\u2013" in text:
+        return False
+    if copy_contains_banned(text):
+        return False
+    sentences = split_sentences(text)
+    if len(sentences) < 5 or len(sentences) > 6:
+        return False
+    contrast_src = sentences[4] if len(sentences) >= 5 else text
+    if not _CONTRAST.search(contrast_src):
+        return False
+    if shares_lead(text, banned, threshold=REFLECTION_OVERLAP):
+        return False
+    return True
+
+
+def _reflection_fallback(top_entity: str, top_fact: str, secondary_entity: str, secondary_fact: str) -> str:
+    top_fact = naturalize_text(top_fact).rstrip(".")
+    secondary_fact = naturalize_text(secondary_fact).rstrip(".")
+    top_entity = naturalize_text(top_entity)
+    secondary_entity = naturalize_text(secondary_entity)
+    lines = [
+        f"{top_fact}.",
+        f"That was the week's hard number for {top_entity}.",
+        f"{secondary_fact}.",
+        f"That left {secondary_entity} on the calendar, not in the outcome column.",
+        "Flow moved the tape this week, but the second story was still procedural.",
+    ]
+    return _clean("\n".join(lines), REFLECTION_MAX)
+
+
+def weekly_reflection(
+    top_entity: str,
+    top_fact: str,
+    secondary_entity: str,
+    secondary_fact: str,
+    *,
+    banned: Optional[list[str]] = None,
+) -> str:
+    """Threads editorial read. Never a recap clone. Max 700 chars."""
+    banned = [item for item in (banned or []) if str(item).strip()]
+    user = f"""You are the Coin Wire editorial voice for Threads. Write a 5-6 sentence weekly reflection.
+Voice: dry, wire-service tone with light editorial judgment. Active voice. No em dash or en dash — use comma, period, colon, or hyphen only. Max 18 words per sentence.
+Rules:
+- Sentences 1-2: state the top story using ONLY this fact: "{top_entity}: {top_fact}". Do not add numbers or claims not in this fact.
+- Sentences 3-4: state the secondary story using ONLY this fact: "{secondary_entity}: {secondary_fact}". Do not add numbers or claims not in this fact.
+- Sentence 5: contrast what moved versus what was procedural or noise. Must contain one of: but, still, yet, meanwhile.
+- Sentence 6 (optional): one forward-looking sentence about what to watch. Do not invent any date, number, or event not already known.
+Forbidden phrases: "markets are watching", "traders are reacting", "this is a developing story", "bullish", "bearish", "what do you think", "crypto fam", "NFA", "DYOR".
+Do not invent any number, date, or quote not present in the facts given above.
+Do not ask a question. Do not use hashtags or emoji.
+Output only the sentences, nothing else."""
+    llm = _llm_text("Write a weekly reflection Threads post.", user, REFLECTION_MAX)
+    if llm and _reflection_ok(llm, banned):
+        return llm
+    retry_user = (
+        "Previous draft reused earlier copy. Rephrase. Keep the same facts.\n\n" + user
+    )
+    retry = _llm_text("Write a weekly reflection Threads post.", retry_user, REFLECTION_MAX)
+    if retry and _reflection_ok(retry, banned):
+        return retry
+    fallback = _reflection_fallback(top_entity, top_fact, secondary_entity, secondary_fact)
+    if fallback and _reflection_ok(fallback, banned):
+        return fallback
+    forced = (
+        f"{naturalize_text(top_entity)} set the week's print.\n"
+        f"The named fact stayed on the tape.\n"
+        f"{naturalize_text(secondary_entity)} stayed on the calendar.\n"
+        "That was process, not an outcome.\n"
+        "The tape moved on flows, but policy did not."
+    )
+    forced = _clean(forced, REFLECTION_MAX)
+    if forced and _reflection_ok(forced, banned):
+        return forced
+    return ""
 
 
 def telegram_context(article: dict[str, Any]) -> str:

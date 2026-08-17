@@ -133,6 +133,7 @@ def _public_pack(pack: dict | None) -> dict | None:
         "marks": {name: bool(marks.get(name)) for name in db.PLATFORMS},
         "carousel_caption": carousel,
         "carousel": [p.name for p in catalog.list_carousel_slides()],
+        "story": bool(catalog.story_path()),
         "caption_ready": bool(ig),
         "fallback": bool(pack.get("fallback")),
         "copy_source": str(pack.get("copy_source") or ""),
@@ -320,6 +321,21 @@ def media_ig_slide(request: Request, name: str, dl: int = 0):
         path,
         media_type="image/jpeg",
         filename=path.name,
+        content_disposition_type="attachment" if dl else "inline",
+    )
+
+
+@app.get("/media/ig-story.jpg")
+def media_ig_story(request: Request, dl: int = 0):
+    if not _authed(request):
+        raise HTTPException(401, "auth required")
+    path = catalog.story_path()
+    if not path:
+        raise HTTPException(404, "no story")
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        filename="story.jpg",
         content_disposition_type="attachment" if dl else "inline",
     )
 

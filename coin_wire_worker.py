@@ -114,6 +114,10 @@ def job_threads_recap() -> None:
     _run_script("post_editorial.py", "--threads-recap")
 
 
+def job_market_snapshot() -> None:
+    _run_script("post_editorial.py", "--market-snapshot")
+
+
 def job_telegram_poll() -> None:
     _run_script("post_editorial.py", "--poll")
 
@@ -122,7 +126,7 @@ def _refresh_latest_carousel() -> None:
     """Re-render desk carousel from the last Short so old duplicate slides update."""
     import json
 
-    from src.desk.catalog import load_latest, sync_carousel
+    from src.desk.catalog import load_latest, sync_carousel, sync_story
     from src.media.ig_carousel import render_what_moved
     from src.paths import coin_wire_storage
 
@@ -149,11 +153,13 @@ def _refresh_latest_carousel() -> None:
             "description": str(meta.get("description") or ""),
             "script": str(meta.get("script") or ""),
             "source_link": str(meta.get("source_link") or ""),
+            "allow_quote_card": False,
         },
         out_dir,
         fetch_stock=False,
     )
     sync_carousel(out_dir)
+    sync_story(out_dir)
     log.info("Carousel refresh: %d slides for %s", len(paths), title[:60])
 
 
@@ -385,6 +391,17 @@ def main() -> None:
             misfire_grace_time=7200,
         )
         log.info("Threads recap: Friday %s", recap_time)
+    snapshot_time = schedule_cfg.get("market_snapshot", "08:00")
+    if editorial_cfg.get("market_snapshot", True):
+        hour, minute = _parse_hhmm(snapshot_time)
+        scheduler.add_job(
+            job_market_snapshot,
+            CronTrigger(hour=hour, minute=minute, timezone=timezone),
+            id="market_snapshot",
+            replace_existing=True,
+            misfire_grace_time=7200,
+        )
+        log.info("Market snapshot: daily %s", snapshot_time)
     if int(editorial_cfg.get("poll_per_week", 0) or 0) > 0:
         for index, time_str in enumerate(poll_times):
             hour, minute = _parse_hhmm(time_str)

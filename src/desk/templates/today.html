@@ -175,6 +175,18 @@
         <a class="btn-ghost btn-save" href="/media/ig.zip">ZIP запасний</a>
       </section>
       {% endif %}
+      {% if pack.story %}
+      <section class="card platform" data-platform="ig-story">
+        <div class="platform-header"><h2>Stories</h2></div>
+        <p class="step">Зберегти 9:16 → Instagram Stories. Підпис не потрібен.</p>
+        <div class="ig-grid">
+          <img src="/media/ig-story.jpg" alt="Story" width="180" height="320">
+        </div>
+        <div class="actions">
+          <a class="btn-primary" href="/media/ig-story.jpg?dl=1">Зберегти</a>
+        </div>
+      </section>
+      {% endif %}
       {% else %}
       <p class="inline-empty">Немає Short для Instagram.</p>
       {% endif %}

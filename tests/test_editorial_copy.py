@@ -10,6 +10,7 @@ from src.content.editorial_copy import (
     telegram_poll,
     telegram_weekly_digest,
     weekly_recap,
+    weekly_reflection,
 )
 from src.content.editorial_log import append_event, events_since, format_events_list
 from src.content.copy_guard import display_title, looks_like_filename_slug, safe_caption
@@ -69,6 +70,41 @@ def test_weekly_formats(monkeypatch):
     assert "BlackRock" in digest
     assert "—" not in recap
     assert "—" not in digest
+
+
+def test_weekly_reflection_fallback(monkeypatch):
+    monkeypatch.setenv("COPY_LLM_ENABLED", "0")
+    text = weekly_reflection(
+        "BlackRock",
+        "BlackRock Bitcoin ETFs pulled in $4.6B over three days",
+        "CFTC",
+        "The CFTC set Aug. 20 for a committee meeting on crypto, AI, and prediction markets",
+    )
+    assert "BlackRock" in text or "$4.6" in text
+    assert "CFTC" in text
+    assert re.search(r"\b(but|still|yet|meanwhile)\b", text, re.I)
+    assert len(text) <= 700
+    assert "#" not in text
+    assert "?" not in text
+    assert "📊" not in text
+    sentences = [ln for ln in re.split(r"(?<=[.!?])\s+", text.strip()) if ln.strip()]
+    assert 5 <= len(sentences) <= 6
+
+
+def test_weekly_reflection_rejects_overlap(monkeypatch):
+    monkeypatch.setenv("COPY_LLM_ENABLED", "0")
+    banned = [
+        "BlackRock Bitcoin ETFs pulled in $4.6B over three days. That was the week's hard number for BlackRock."
+    ]
+    text = weekly_reflection(
+        "BlackRock",
+        "BlackRock Bitcoin ETFs pulled in $4.6B over three days",
+        "CFTC",
+        "The CFTC set Aug. 20 for a committee meeting on crypto",
+        banned=banned,
+    )
+    assert text
+    assert "but" in text.lower() or "still" in text.lower() or "yet" in text.lower()
 
 
 def test_poll_has_three_options(monkeypatch):

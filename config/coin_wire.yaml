@@ -96,6 +96,9 @@ publishing:
     context_on_breaking: true
     weekly_digest: true
     threads_recap: true
+    threads_reflection: true
+    market_snapshot: true
+    story_quote_per_week: 3
 
 # Local B-roll auto-fill (Pexels/Pixabay → folders → ffprobe + YOLO marks rejects)
 broll_library:
@@ -128,3 +131,4 @@ automation:
     weekly_digest: "09:00"                 # Monday Telegram digest
     threads_recap: "18:00"                 # Friday Threads recap
     telegram_poll_times: ["12:00"]         # Wed + Fri polls
+    market_snapshot: "08:00"               # daily English price list

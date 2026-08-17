@@ -30,6 +30,14 @@ def test_editorial_new_vs_old_badges(tmp_path, monkeypatch):
                 "done": False,
             },
             {
+                "id": "ref-1",
+                "kind": "reflection",
+                "label": "Threads — weekly reflection",
+                "text": "Flow moved the tape, but policy did not.",
+                "created_at": now.isoformat(),
+                "done": False,
+            },
+            {
                 "id": "done-1",
                 "kind": "context",
                 "label": "Telegram — контекст",
@@ -48,7 +56,8 @@ def test_editorial_new_vs_old_badges(tmp_path, monkeypatch):
         assert by_id["old-1"]["badge"] == "РАНІШЕ"
     assert by_id["done-1"]["badge"] == "ГОТОВО"
     assert by_id["done-1"]["tab"] == "telegram"
-    assert items[0]["id"] == "new-1"
+    assert by_id["ref-1"]["tab"] == "threads"
+    assert items[0]["id"] in {"new-1", "ref-1"}
     marked = catalog.set_editorial_done("new-1", True)
     assert marked["done"] is True
     assert marked["badge"] == "ГОТОВО"
@@ -193,7 +202,11 @@ def test_login_and_today(tmp_path, monkeypatch):
     slides = work / "ig_carousel"
     slides.mkdir(parents=True)
     (slides / "01.jpg").write_bytes(b"jpeg-one")
+    (slides / "story.jpg").write_bytes(b"not-a-carousel-slide")
     (slides / "caption.txt").write_text("carousel body", encoding="utf-8")
+    story = work / "ig_story"
+    story.mkdir()
+    (story / "story.jpg").write_bytes(b"story-bytes")
     catalog.write_desk_pack(
         title="Desk title",
         video_path=video,
@@ -231,6 +244,12 @@ def test_login_and_today(tmp_path, monkeypatch):
     assert "Карусель" in home.text or "карусель" in home.text.lower() or "carousel" in home.text.lower()
     assert "data-share-carousel" in home.text
     assert "data-save-carousel" in home.text
+    assert "Stories" in home.text
+    assert "/media/ig-story.jpg" in home.text
+    assert catalog.list_carousel_slides() == [catalog.carousel_dir() / "01.jpg"]
+    story_res = client.get("/media/ig-story.jpg")
+    assert story_res.status_code == 200
+    assert story_res.content == b"story-bytes"
     assert "Наступна перевірка" in home.text
     slide = client.get("/media/ig/01.jpg")
     assert slide.status_code == 200

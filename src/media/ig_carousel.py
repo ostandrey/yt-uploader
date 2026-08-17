@@ -454,4 +454,29 @@ def render_what_moved(
         frame.save(path, format="JPEG", quality=92, optimize=True)
         paths.append(path)
     (out / "caption.txt").write_text(carousel_caption(content), encoding="utf-8")
+    try:
+        from src.media.ig_story import render_ig_story
+
+        takeaway = str(content.get("takeaway") or "").strip()
+        if not takeaway:
+            from src.content.editorial_jobs import latest_telegram_takeaway
+
+            takeaway = latest_telegram_takeaway()
+        if not takeaway:
+            from src.content.news_filter import build_market_takeaway
+
+            takeaway = build_market_takeaway(
+                {
+                    "title": content.get("title") or "",
+                    "summary": content.get("description") or content.get("script") or "",
+                }
+            )
+        story_dest = Path(work_dir) / "ig_story" / "story.jpg"
+        render_ig_story(
+            paths[0],
+            story_dest,
+            {**content, "takeaway": takeaway},
+        )
+    except Exception as exc:
+        print(f"IG story render failed: {exc}")
     return paths

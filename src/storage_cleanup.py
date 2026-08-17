@@ -24,7 +24,7 @@ RENDERS_DIR = COIN_WIRE_ROOT / "renders"
 KEEP_RENDER_FILES = frozenset(
     {"metadata.json", "shorts_qa.json", "thumbnail.jpg", "caption.txt"}
 )
-KEEP_RENDER_DIRS = frozenset({"ig_carousel"})
+KEEP_RENDER_DIRS = frozenset({"ig_carousel", "ig_story"})
 BUDGET_USED_RATIO = 0.75
 MIN_FREE_BYTES = 800 * 1024 * 1024
 

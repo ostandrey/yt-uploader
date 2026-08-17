@@ -140,6 +140,21 @@ class TelegramPublisher:
             raise RuntimeError(f"Telegram sendPoll error: {data}")
         return data
 
+    def post_to_channel(
+        self,
+        text: str,
+        *,
+        buttons: Optional[ButtonsArg] = None,
+    ) -> dict:
+        if not self.channel_id:
+            raise ValueError("TELEGRAM_CHANNEL_ID is not set")
+        return self._send(
+            self.channel_id,
+            text,
+            disable_preview=True,
+            buttons=buttons,
+        )
+
     def post_to_channel_html(
         self,
         text: str,

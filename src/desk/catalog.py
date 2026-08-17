@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -100,6 +101,7 @@ def write_desk_pack(
     STORAGE.mkdir(parents=True, exist_ok=True)
     LATEST_FILE.write_text(json.dumps(pack, indent=2), encoding="utf-8")
     sync_carousel(work_dir)
+    sync_story(work_dir)
     saved = db.upsert_short(pack)
     pack.update(saved)
     try:
@@ -215,7 +217,38 @@ def list_carousel_slides() -> list[Path]:
     folder = carousel_dir()
     if not folder.is_dir():
         return []
-    return sorted(p for p in folder.glob("*.jpg") if p.is_file() and _under(p, folder))
+    return sorted(
+        p
+        for p in folder.glob("*.jpg")
+        if p.is_file() and _under(p, folder) and re.fullmatch(r"0[1-4]\.jpg", p.name)
+    )
+
+
+def story_dir() -> Path:
+    return STORAGE / "ig_story"
+
+
+def sync_story(work_dir: Path) -> Optional[Path]:
+    src = Path(work_dir) / "ig_story" / "story.jpg"
+    dest_dir = story_dir()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / "story.jpg"
+    if src.is_file() and dest.resolve() != src.resolve():
+        shutil.copy2(src, dest)
+        return dest
+    if not src.is_file() and dest.is_file():
+        dest.unlink(missing_ok=True)
+        return None
+    if dest.is_file() and _under(dest, dest_dir):
+        return dest
+    return None
+
+
+def story_path() -> Optional[Path]:
+    path = story_dir() / "story.jpg"
+    if path.is_file() and _under(path, story_dir()):
+        return path
+    return None
 
 
 def used_short_hashes() -> set[str]:
@@ -315,7 +348,7 @@ def _enrich_editorial(item: dict[str, Any], now: datetime) -> dict[str, Any]:
     age_hours = _age_hours(created_at, now)
     is_new = (not done) and age_hours is not None and age_hours < 8
     kind = str(item.get("kind") or "note")
-    if kind in {"opinion", "question", "recap"}:
+    if kind in {"opinion", "question", "recap", "reflection", "snapshot"}:
         tab = "threads"
     elif kind in {"context", "poll", "digest"}:
         tab = "telegram"
@@ -530,7 +563,7 @@ def resolve_thumb(pack: dict[str, Any]) -> Optional[Path]:
 
 def desk_tabs(pack: dict | None, editorial: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Tab strip: unpublished counts (open work), not only НОВЕ."""
-    threads_kinds = {"opinion", "question", "recap"}
+    threads_kinds = {"opinion", "question", "recap", "reflection", "snapshot"}
     telegram_kinds = {"context", "poll", "digest"}
     threads_new = sum(
         1

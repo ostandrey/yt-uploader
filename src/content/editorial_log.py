@@ -18,7 +18,8 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def load_log(path: Path = LOG_FILE) -> list[dict[str, Any]]:
+def load_log(path: Optional[Path] = None) -> list[dict[str, Any]]:
+    path = path or LOG_FILE
     if not path.exists():
         return []
     try:
@@ -39,8 +40,9 @@ def append_event(
     tier: str = "",
     article_hash: str = "",
     extra: Optional[dict[str, Any]] = None,
-    path: Path = LOG_FILE,
+    path: Optional[Path] = None,
 ) -> dict[str, Any]:
+    path = path or LOG_FILE
     item = {
         "ts": _now_iso(),
         "kind": kind,
@@ -65,9 +67,10 @@ def events_since(
     days: int = 7,
     *,
     kinds: Optional[set[str]] = None,
-    path: Path = LOG_FILE,
+    path: Optional[Path] = None,
     tz_name: str = "America/New_York",
 ) -> list[dict[str, Any]]:
+    path = path or LOG_FILE
     cutoff = datetime.now(ZoneInfo(tz_name)) - timedelta(days=days)
     out: list[dict[str, Any]] = []
     for item in load_log(path):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -10,6 +11,8 @@ from zoneinfo import ZoneInfo
 
 from src.content import editorial_copy
 from src.content.editorial_log import append_event, events_since, format_events_list, load_log
+from src.content.market_ticker import fetch_market_quotes, format_market_snapshot
+from src.content.news_filter import build_market_takeaway
 from src.content.story_dedupe import titles_similar
 from src.desk.catalog import _raw_editorial_items, write_editorial_items
 from src.publishers.telegram_publisher import TelegramPublisher
@@ -30,7 +33,7 @@ def _story_editorial_done(title: str) -> bool:
         if text and titles_similar(title, text[:220]):
             return True
     for event in load_log()[-60:]:
-        if event.get("kind") in {"opinion", "question", "context"} and titles_similar(
+        if event.get("kind") in {"opinion", "question", "context", "reflection"} and titles_similar(
             title, str(event.get("title") or "")
         ):
             return True
@@ -42,7 +45,8 @@ def _week_key(tz_name: str) -> str:
     return now.strftime("%G-W%V")
 
 
-def _load_state(tz_name: str, path: Path = STATE_FILE) -> dict[str, Any]:
+def _load_state(tz_name: str, path: Optional[Path] = None) -> dict[str, Any]:
+    path = path or STATE_FILE
     week = _week_key(tz_name)
     if path.exists():
         try:
@@ -59,10 +63,14 @@ def _load_state(tz_name: str, path: Path = STATE_FILE) -> dict[str, Any]:
         "context": 0,
         "digest": 0,
         "recap": 0,
+        "reflection": 0,
+        "snapshot_day": "",
+        "story_quote": 0,
     }
 
 
-def _save_state(state: dict[str, Any], path: Path = STATE_FILE) -> None:
+def _save_state(state: dict[str, Any], path: Optional[Path] = None) -> None:
+    path = path or STATE_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
@@ -111,7 +119,204 @@ def _push_desk_item(kind: str, label: str, text: str) -> None:
             f"sent={pushed.get('sent')} subs={pushed.get('subs')}"
         )
     except Exception as exc:
-        print(f"Desk push (editorial) failed: {exc}")
+            print(f"Desk push (editorial) failed: {exc}")
+
+
+_TIER_RANK = {"breaking": 4, "insight": 3, "strong": 2, "standard": 1}
+_ENTITY = re.compile(
+    r"\b(BlackRock|Fidelity|Coinbase|Binance|Grayscale|MicroStrategy|"
+    r"SEC|CFTC|Fed|FOMC|OCC|FDIC|ESMA|FCA|Treasury|"
+    r"Bitcoin|Ethereum|Solana|XRP|ETF)\b",
+    re.I,
+)
+_REGULATORY = re.compile(
+    r"\b(SEC|CFTC|Fed|FOMC|OCC|FDIC|ESMA|FCA|Treasury|committee|filing|rule)\b",
+    re.I,
+)
+_FLOW = re.compile(r"\b(ETF|inflow|outflow|flow|BlackRock|Fidelity|Grayscale)\b", re.I)
+_MONEY = re.compile(r"\$|\d+(?:\.\d+)?\s?%")
+
+
+def _event_entity(item: dict[str, Any]) -> str:
+    blob = f"{item.get('title') or ''} {item.get('summary') or ''}"
+    match = _ENTITY.search(blob)
+    if match:
+        return match.group(1)
+    title = str(item.get("title") or "").strip()
+    return " ".join(title.split()[:2]) if title else "This"
+
+
+def _norm_entity(name: str) -> str:
+    aliases = {
+        "btc": "bitcoin",
+        "eth": "ethereum",
+        "the fed": "fed",
+        "federal reserve": "fed",
+    }
+    return aliases.get(name.lower(), name.lower())
+
+
+def _event_fact(item: dict[str, Any]) -> str:
+    title = str(item.get("title") or "").strip()
+    summary = str(item.get("summary") or "").strip()
+    if title:
+        return title
+    return summary.split(".")[0].strip() if summary else ""
+
+
+def _event_bucket(item: dict[str, Any]) -> str:
+    blob = f"{item.get('title') or ''} {item.get('summary') or ''}"
+    if _REGULATORY.search(blob) and not _FLOW.search(blob):
+        return "regulatory"
+    if _FLOW.search(blob):
+        return "flow"
+    return "other"
+
+
+def pick_reflection_pair(events: list[dict[str, Any]]) -> Optional[tuple[dict[str, Any], dict[str, Any]]]:
+    usable = [item for item in events if _event_fact(item)]
+    if len(usable) < 2:
+        return None
+
+    def _score(item: dict[str, Any]) -> tuple[int, int]:
+        rank = _TIER_RANK.get(str(item.get("tier") or "").lower(), 0)
+        money = 1 if _MONEY.search(_event_fact(item)) else 0
+        return (rank, money)
+
+    ranked = sorted(usable, key=_score, reverse=True)
+    top = ranked[0]
+    top_entity = _norm_entity(_event_entity(top))
+    top_bucket = _event_bucket(top)
+    secondary = None
+    for item in ranked[1:]:
+        if _norm_entity(_event_entity(item)) == top_entity:
+            continue
+        if _event_bucket(item) != top_bucket or top_bucket == "other":
+            secondary = item
+            if _event_bucket(item) != top_bucket:
+                break
+    if secondary is None:
+        for item in ranked[1:]:
+            if _norm_entity(_event_entity(item)) != top_entity:
+                secondary = item
+                break
+    if secondary is None:
+        return None
+    return top, secondary
+
+
+def latest_telegram_takeaway(tz_name: str = "America/New_York") -> str:
+    for item in reversed(events_since(1, kinds={"telegram"}, tz_name=tz_name)):
+        value = str(item.get("takeaway") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def week_banned_leads(tz_name: str) -> list[str]:
+    banned: list[str] = []
+    for item in events_since(7, kinds={"telegram", "opinion"}, tz_name=tz_name):
+        for key in ("takeaway", "summary", "title"):
+            value = str(item.get(key) or "").strip()
+            if value:
+                banned.append(value)
+    for item in _raw_editorial_items():
+        if item.get("kind") in {"opinion", "question", "recap"}:
+            text = str(item.get("text") or "").strip()
+            if text:
+                banned.append(text)
+    return banned
+
+
+def post_market_snapshot(
+    publisher: TelegramPublisher,
+    config: dict,
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    tz_name = _tz(config)
+    today = datetime.now(ZoneInfo(tz_name)).strftime("%Y-%m-%d")
+    state = _load_state(tz_name)
+    if state.get("snapshot_day") == today:
+        return {"posted": False, "reason": "already_today"}
+    quotes = fetch_market_quotes(snapshot=True)
+    text = format_market_snapshot(quotes, when=datetime.now(ZoneInfo(tz_name)))
+    if not text:
+        return {"posted": False, "reason": "no_quotes"}
+    if dry_run:
+        return {"posted": False, "dry_run": True, "text": text}
+    try:
+        publisher.post_to_channel(text)
+    except Exception as exc:
+        print(f"Market snapshot Telegram failed: {exc}")
+        return {"posted": False, "reason": "telegram_failed"}
+    state["snapshot_day"] = today
+    _save_state(state)
+    _push_desk_item("snapshot", "Threads — зріз ринку", text)
+    try:
+        from src.media.ig_story import ensure_story_backgrounds
+
+        ensure_story_backgrounds()
+    except Exception as exc:
+        print(f"Story background refresh failed: {exc}")
+    append_event(kind="snapshot", title="Market snapshot")
+    try:
+        from src.publishers.owner_notify import format_desk_editorial_ready, notify_owner_status
+
+        notify_owner_status(
+            publisher,
+            [format_desk_editorial_ready(kind="snapshot", title="Market snapshot")],
+        )
+    except Exception as exc:
+        print(f"Snapshot owner notify failed: {exc}")
+    return {"posted": True, "text": text}
+
+
+def post_threads_reflection(
+    publisher: TelegramPublisher,
+    config: dict,
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    tz_name = _tz(config)
+    state = _load_state(tz_name)
+    if state.get("reflection"):
+        return {"posted": False, "reason": "already_this_week"}
+    opinion_cap = int(_editorial_cfg(config).get("opinion_per_week", 3))
+    if int(state.get("opinion", 0)) >= opinion_cap:
+        return {"posted": False, "reason": "opinion_cap"}
+    items = events_since(7, kinds={"telegram", "short"}, tz_name=tz_name)
+    pair = pick_reflection_pair(items)
+    if not pair:
+        return {"posted": False, "reason": "need_two_stories"}
+    top, secondary = pair
+    banned = week_banned_leads(tz_name)
+    text = editorial_copy.weekly_reflection(
+        _event_entity(top),
+        _event_fact(top),
+        _event_entity(secondary),
+        _event_fact(secondary),
+        banned=banned,
+    )
+    if not text:
+        return {"posted": False, "reason": "no_copy"}
+    _push_desk_item("reflection", "Threads — рефлексія тижня", text)
+    if dry_run:
+        return {"posted": False, "dry_run": True, "text": text}
+    state["reflection"] = 1
+    state["opinion"] = int(state.get("opinion", 0)) + 1
+    _save_state(state)
+    append_event(kind="reflection", title="Threads weekly reflection")
+    try:
+        from src.publishers.owner_notify import format_desk_editorial_ready, notify_owner_status
+
+        notify_owner_status(
+            publisher,
+            [format_desk_editorial_ready(kind="reflection", title="Weekly reflection")],
+        )
+    except Exception as exc:
+        print(f"Editorial owner notify failed: {exc}")
+    return {"posted": False, "text": text, "url": ""}
 
 
 def after_telegram_post(
@@ -131,6 +336,7 @@ def after_telegram_post(
         summary=str(article.get("summary") or ""),
         tier=tier,
         article_hash=str(article.get("hash") or ""),
+        extra={"takeaway": build_market_takeaway(article)},
     )
     if dry_run:
         return {"queued": []}
@@ -229,42 +435,50 @@ def post_threads_recap(
 ) -> dict[str, Any]:
     tz_name = _tz(config)
     state = _load_state(tz_name)
+    recap_result: dict[str, Any]
     if state.get("recap"):
-        return {"posted": False, "reason": "already_this_week"}
-    items = events_since(7, kinds={"telegram", "short"}, tz_name=tz_name)
-    events_list = format_events_list(items, limit=5)
-    text = editorial_copy.weekly_recap(events_list)
-    if not text:
-        return {"posted": False, "reason": "no_events"}
-    _push_desk_item("recap", "Threads — weekly recap", text)
-    threads = ThreadsPublisher()
-    posted = False
-    url = ""
-    if not dry_run and threads.configured():
-        try:
-            result = threads.publish_text(text)
-            posted = True
-            url = str(result.get("url") or "")
-        except Exception as exc:
-            print(f"Threads recap publish failed: {exc}")
-    if not dry_run:
-        state["recap"] = 1
-        _save_state(state)
-        append_event(kind="recap", title="Threads weekly recap")
-        try:
-            from src.publishers.owner_notify import (
-                format_desk_editorial_ready,
-                format_threads_pulse_posted,
-                notify_owner_status,
-            )
+        recap_result = {"posted": False, "reason": "already_this_week", "dry_run": dry_run}
+    else:
+        items = events_since(7, kinds={"telegram", "short"}, tz_name=tz_name)
+        events_list = format_events_list(items, limit=5)
+        text = editorial_copy.weekly_recap(events_list)
+        if not text:
+            recap_result = {"posted": False, "reason": "no_events", "dry_run": dry_run}
+        else:
+            _push_desk_item("recap", "Threads — weekly recap", text)
+            threads = ThreadsPublisher()
+            posted = False
+            url = ""
+            if not dry_run and threads.configured():
+                try:
+                    result = threads.publish_text(text)
+                    posted = True
+                    url = str(result.get("url") or "")
+                except Exception as exc:
+                    print(f"Threads recap publish failed: {exc}")
+            if not dry_run:
+                state["recap"] = 1
+                _save_state(state)
+                append_event(kind="recap", title="Threads weekly recap")
+                try:
+                    from src.publishers.owner_notify import (
+                        format_desk_editorial_ready,
+                        format_threads_pulse_posted,
+                        notify_owner_status,
+                    )
 
-            lines = [format_desk_editorial_ready(kind="recap", title="Weekly recap")]
-            if posted:
-                lines.append(format_threads_pulse_posted(variant="weekly recap", url=url))
-            notify_owner_status(publisher, lines)
-        except Exception as exc:
-            print(f"Editorial owner notify failed: {exc}")
-    return {"posted": posted, "text": text, "url": url, "dry_run": dry_run}
+                    lines = [format_desk_editorial_ready(kind="recap", title="Weekly recap")]
+                    if posted:
+                        lines.append(format_threads_pulse_posted(variant="weekly recap", url=url))
+                    notify_owner_status(publisher, lines)
+                except Exception as exc:
+                    print(f"Editorial owner notify failed: {exc}")
+            recap_result = {"posted": posted, "text": text, "url": url, "dry_run": dry_run}
+    if _editorial_cfg(config).get("threads_reflection", True):
+        recap_result["reflection"] = post_threads_reflection(
+            publisher, config, dry_run=dry_run
+        )
+    return recap_result
 
 
 def post_telegram_poll(

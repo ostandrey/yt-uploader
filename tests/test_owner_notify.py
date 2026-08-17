@@ -51,6 +51,9 @@ def test_editorial_desk_ready():
     assert "opinion" in text
     assert "desk ready" in text
     assert "ETF flows" in text
+    reflection = format_desk_editorial_ready(kind="reflection", title="Weekly read")
+    assert "Threads" in reflection
+    assert "weekly reflection" in reflection
 
 
 def test_desk_deep_link(monkeypatch):
