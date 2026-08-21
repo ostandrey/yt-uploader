@@ -36,6 +36,11 @@
         <p class="recent-title">{{ short.title }}</p>
         <p class="recent-when">Short{% if short.when %} · {{ short.when }}{% endif %}</p>
       </div>
+      <div class="badges">
+        <span class="badge {% if short.marks.youtube %}badge-ok{% else %}badge-info{% endif %}">YT</span>
+        <span class="badge {% if short.marks.tiktok %}badge-ok{% else %}badge-info{% endif %}">TT</span>
+        <span class="badge {% if short.marks.instagram %}badge-ok{% else %}badge-info{% endif %}">IG</span>
+      </div>
     </article>
     {% endfor %}
   </section>

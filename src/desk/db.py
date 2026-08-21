@@ -13,7 +13,7 @@ from src.paths import coin_wire_storage
 
 ROOT = Path(__file__).resolve().parents[2]
 STORAGE = coin_wire_storage()
-PLATFORMS = ("tiktok", "instagram", "threads")
+PLATFORMS = ("tiktok", "instagram", "threads", "youtube")
 
 _lock = threading.RLock()
 _initialized = False

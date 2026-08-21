@@ -155,6 +155,22 @@ def publish_due_shorts(*, dry_run: bool = False) -> List[Dict[str, Any]]:
         results.append({"video_id": video_id, "title": title, "url": url})
 
         try:
+            from src.desk import db
+            from src.desk.catalog import mark_platforms_posted
+
+            for short in db.list_shorts(40):
+                yt = str(short.get("youtube_url") or "")
+                if video_id and video_id in yt:
+                    mark_platforms_posted(
+                        short_id=short.get("id"),
+                        platforms=("youtube",),
+                    )
+                    print(f"[desk] youtube public mark video_id={video_id}")
+                    break
+        except Exception:
+            pass
+
+        try:
             from src.publishers.owner_notify import format_youtube_status, notify_owner_status
 
             head = (title or "").strip()

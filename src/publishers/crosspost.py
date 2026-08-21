@@ -244,3 +244,22 @@ def format_crosspost_summary(crosspost: dict[str, Any]) -> str:
     if len(lines) == 1:
         lines.append("  (no platforms enabled)")
     return "\n".join(lines)
+
+
+def desk_platforms_from_crosspost(
+    crosspost: Optional[dict[str, Any]] = None,
+    *,
+    youtube_url: str = "",
+) -> list[str]:
+    """Map successful crosspost keys (+ YouTube URL) to desk mark platform names."""
+    out: list[str] = []
+    results = (crosspost or {}).get("results") or {}
+    if results.get("tiktok"):
+        out.append("tiktok")
+    if results.get("instagram_reel") or results.get("instagram_feed"):
+        out.append("instagram")
+    if results.get("threads"):
+        out.append("threads")
+    if str(youtube_url or "").strip():
+        out.append("youtube")
+    return out

@@ -45,6 +45,10 @@
         <span>YouTube черга</span>
       </div>
       <div class="stat-card">
+        <b class="stat-ok">{{ snap.posted_youtube }}</b>
+        <span>YouTube ✓</span>
+      </div>
+      <div class="stat-card">
         <b class="stat-ok">{{ snap.posted_tiktok }}</b>
         <span>TikTok ✓</span>
       </div>
@@ -70,7 +74,11 @@
       </div>
     </div>
 
-    <p class="muted">Останній Short: {{ snap.latest_title or "—" }}{% if snap.latest_at %} · {{ snap.latest_at }}{% endif %}</p>
+    <p class="muted">
+      Останній Short: {{ snap.latest_title or "—" }}
+      {% if snap.latest_age %} · {{ snap.latest_age }}{% elif snap.latest_at %} · {{ snap.latest_at }}{% endif %}
+      {% if snap.latest_is_today %} · сьогодні{% else %} · не сьогодні{% endif %}
+    </p>
     {% if snap.overdue_today %}
     <p class="warn-inline">{{ snap.overdue_today }}</p>
     {% endif %}
@@ -86,6 +94,7 @@
           <p class="recent-when">{{ item.when }}</p>
         </div>
         <div class="badges">
+          <span class="badge {% if item.marks.youtube %}badge-ok{% else %}badge-info{% endif %}">YT</span>
           <span class="badge {% if item.marks.tiktok %}badge-ok{% else %}badge-info{% endif %}">TT</span>
           <span class="badge {% if item.marks.instagram %}badge-ok{% else %}badge-info{% endif %}">IG</span>
           <span class="badge {% if item.marks.threads %}badge-ok{% else %}badge-info{% endif %}">TH</span>
@@ -112,7 +121,7 @@
     {% else %}
     <p class="muted">Немає черги.</p>
     {% endif %}
-    <p class="hint">Журнал з volume воркера. Перегляди YouTube сюди не підтягуються.</p>
+    <p class="hint">Журнал з volume воркера. Перегляди YouTube сюди не підтягуються. /health → metrics.</p>
   </main>
 </div>
 {% endblock %}

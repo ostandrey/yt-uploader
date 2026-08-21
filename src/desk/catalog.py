@@ -503,6 +503,17 @@ def set_editorial_done(item_id: str, done: bool = True) -> Optional[dict[str, An
     return enriched or found
 
 
+def pack_day_key(pack: Optional[dict[str, Any]]) -> str:
+    if not pack:
+        return ""
+    return _day_key(str(pack.get("updated_at") or pack.get("created_at") or ""))
+
+
+def pack_is_today(pack: Optional[dict[str, Any]]) -> bool:
+    day = pack_day_key(pack)
+    return bool(day) and day == _today_key()
+
+
 def _age_hours(iso: str, now: Optional[datetime] = None) -> Optional[float]:
     if not iso:
         return None
@@ -524,7 +535,68 @@ def _age_label(hours: Optional[float]) -> str:
     if hours < 24:
         return f"{int(hours)} год тому"
     days = int(hours // 24)
+    if days == 1:
+        return "1 день тому"
+    if days < 5:
+        return f"{days} дні тому"
     return f"{days} дн тому"
+
+
+def pack_age_label(pack: Optional[dict[str, Any]]) -> str:
+    """Operator-facing age for the latest Short (Ukrainian)."""
+    if not pack:
+        return ""
+    return _age_label(_age_hours(str(pack.get("updated_at") or pack.get("created_at") or "")))
+
+
+def mark_platforms_posted(
+    *,
+    short_id: Optional[int] = None,
+    video_path: str | Path = "",
+    platforms: list[str] | tuple[str, ...] = (),
+) -> Optional[dict[str, Any]]:
+    """Set desk marks True for auto-posted platforms. No-op if short unknown."""
+    sid = int(short_id) if short_id else 0
+    if not sid:
+        path = str(video_path or "").strip()
+        if not path:
+            return None
+        pack = db.get_short_by_path(path)
+        if not pack or not pack.get("id"):
+            return None
+        sid = int(pack["id"])
+    last: Optional[dict[str, Any]] = None
+    applied: list[str] = []
+    for name in platforms:
+        if name not in db.PLATFORMS:
+            continue
+        updated = db.set_mark(sid, name, True)
+        if updated:
+            last = updated
+            applied.append(name)
+    if applied:
+        print(f"[desk] marks auto short_id={sid} platforms={','.join(applied)}")
+    return last
+
+
+def desk_metrics() -> dict[str, Any]:
+    """Compact ops snapshot for /health and Railway logs."""
+    counts = db.mark_counts()
+    latest = load_latest()
+    editorial = load_editorial_items(scope="today")
+    overdue = overdue_message(editorial, latest)
+    return {
+        "shorts": counts.get("shorts", 0),
+        "posted_youtube": counts.get("youtube", 0),
+        "posted_tiktok": counts.get("tiktok", 0),
+        "posted_instagram": counts.get("instagram", 0),
+        "posted_threads": counts.get("threads", 0),
+        "latest_title": (latest or {}).get("title") or "",
+        "latest_age": pack_age_label(latest),
+        "latest_is_today": pack_is_today(latest),
+        "overdue_today": overdue,
+        "editorial_open_today": sum(1 for item in editorial if not item.get("done")),
+    }
 
 
 def carousel_caption_text() -> str:
@@ -578,13 +650,16 @@ def desk_tabs(pack: dict | None, editorial: list[dict[str, Any]]) -> list[dict[s
     short_new = 0
     tiktok_new = 0
     ig_new = 0
-    if pack:
+    # Only badge open Short work for today's pack — stale packs must not hang forever.
+    if pack and pack_is_today(pack):
         marks = pack.get("marks") or {}
         if not marks.get("tiktok"):
             tiktok_new = 1
             short_new += 1
         if not marks.get("instagram"):
             ig_new = 1
+            short_new += 1
+        if not marks.get("youtube"):
             short_new += 1
     return [
         {"id": "threads", "label": "Threads", "badge": threads_new},
@@ -648,10 +723,13 @@ def stats_snapshot() -> dict[str, Any]:
         "posted_tiktok": counts.get("tiktok", 0),
         "posted_instagram": counts.get("instagram", 0),
         "posted_threads": counts.get("threads", 0),
+        "posted_youtube": counts.get("youtube", 0),
         "articles_used": used,
         "pending_youtube": len(pending),
         "latest_title": (latest or {}).get("title") or "",
         "latest_at": _short_ts(str((latest or {}).get("updated_at") or "")),
+        "latest_age": pack_age_label(latest),
+        "latest_is_today": pack_is_today(latest),
         "latest_qa": (latest or {}).get("qa_score"),
         "history": history,
         "pending": pending[-8:],
@@ -662,7 +740,8 @@ def stats_snapshot() -> dict[str, Any]:
         "storage_path": storage.get("path") or "",
         "storage_warn": bool(storage.get("warn_no_volume") or empty and storage.get("railway")),
         "push_subs": int(storage.get("push_subs") or 0),
-        "overdue_today": _overdue_today(editorial, latest),
+        "overdue_today": overdue_message(editorial, latest),
+        "metrics": desk_metrics(),
         "platforms_today": [
             {
                 "id": "telegram",
@@ -675,6 +754,12 @@ def stats_snapshot() -> dict[str, Any]:
                 "label": "Desk тексти (нові)",
                 "done": editorial_new,
                 "target": max(editorial_open, 1),
+            },
+            {
+                "id": "youtube",
+                "label": "YouTube ✓",
+                "done": counts.get("youtube", 0),
+                "target": max(counts.get("shorts", 0), 1),
             },
             {
                 "id": "tiktok",
@@ -692,7 +777,7 @@ def stats_snapshot() -> dict[str, Any]:
     }
 
 
-def _overdue_today(editorial: list[dict[str, Any]], latest: Optional[dict[str, Any]]) -> str:
+def overdue_message(editorial: list[dict[str, Any]], latest: Optional[dict[str, Any]]) -> str:
     today = _today_key()
     bits: list[str] = []
     threads_n = sum(
@@ -709,11 +794,15 @@ def _overdue_today(editorial: list[dict[str, Any]], latest: Optional[dict[str, A
         bits.append(f"Threads ×{threads_n}")
     if tg_n:
         bits.append(f"TG ×{tg_n}")
-    marks = (latest or {}).get("marks") or {}
-    if latest and not marks.get("tiktok"):
-        bits.append("TikTok")
-    if latest and not marks.get("instagram"):
-        bits.append("IG")
+    # Age-gate: do not nag about TikTok/IG/YouTube on yesterday's pack.
+    if latest and pack_is_today(latest):
+        marks = latest.get("marks") or {}
+        if not marks.get("youtube"):
+            bits.append("YouTube")
+        if not marks.get("tiktok"):
+            bits.append("TikTok")
+        if not marks.get("instagram"):
+            bits.append("IG")
     if not bits:
         return ""
     return "Незапощено сьогодні: " + ", ".join(bits)

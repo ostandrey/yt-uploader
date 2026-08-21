@@ -23,6 +23,9 @@
     Токени YouTube лишай на окремому <code>/app/tokens</code>.
   </div>
   {% endif %}
+  {% if overdue_today %}
+  <p class="warn-inline">{{ overdue_today }}</p>
+  {% endif %}
 
   <section class="push-card card" id="push-card">
     <div class="push-card-copy">
@@ -76,6 +79,12 @@
       <div class="meta-block">
         <h2>{{ pack.title }}</h2>
         <div class="badges">
+          {% if pack.age_label %}
+          <span class="badge {% if pack.is_today %}badge-info{% else %}badge-warn{% endif %}">{{ pack.age_label }}</span>
+          {% endif %}
+          {% if not pack.is_today %}
+          <span class="badge badge-warn">Не сьогодні — TT/IG/YT поза «сьогодні»</span>
+          {% endif %}
           {% if pack.qa_score is not none %}
           <span class="badge {% if pack.qa_score >= 70 %}badge-ok{% else %}badge-warn{% endif %}">QA {{ pack.qa_score }}/100</span>
           {% endif %}
@@ -88,12 +97,19 @@
           {% endif %}
           {% if pack.bytes %}<span class="badge badge-info">{{ (pack.bytes / 1000000) | round(1) }} MB</span>{% endif %}
           {% if not pack.caption_ready %}<span class="badge badge-warn">Немає опису</span>{% endif %}
+          <span id="yt-mark-badge" class="badge badge-ok" {% if not pack.marks.youtube %}hidden{% endif %}>YouTube ✓</span>
         </div>
         {% if pack.degraded_labels %}
         <div class="warn-banner">Деградація: {{ pack.degraded_labels | join(" · ") }}</div>
         {% endif %}
         {% if pack.youtube_url %}
         <a class="yt-link" href="{{ pack.youtube_url }}" target="_blank" rel="noopener">YouTube</a>
+        {% endif %}
+        {% if pack.id %}
+        <label class="mark">
+          <input type="checkbox" data-mark="youtube" {% if pack.marks.youtube %}checked{% endif %}>
+          <span>YouTube вже запостив / public</span>
+        </label>
         {% endif %}
       </div>
       {% else %}

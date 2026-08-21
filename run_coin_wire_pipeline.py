@@ -40,7 +40,11 @@ from src.publishers.pending_publish import (
     auto_publish_enabled,
 )
 from src.publishers.captions import phone_copy_packs
-from src.publishers.crosspost import format_crosspost_summary, run_crosspost
+from src.publishers.crosspost import (
+    desk_platforms_from_crosspost,
+    format_crosspost_summary,
+    run_crosspost,
+)
 from src.publishers.telegram_publisher import TelegramPublisher, control_keyboard
 from src.publishers.youtube_publisher import YouTubePublisher
 from src.desk.catalog import list_carousel_slides, write_desk_pack
@@ -513,6 +517,15 @@ def run_pipeline(
         qa_score=(result.get("shorts_qa") or {}).get("score"),
         degraded=degraded,
     )
+    try:
+        from src.desk.catalog import mark_platforms_posted
+
+        platforms = desk_platforms_from_crosspost(crosspost, youtube_url=youtube_url)
+        if platforms:
+            mark_platforms_posted(video_path=video_path, platforms=platforms)
+            print(f"Desk marks auto-set: {', '.join(platforms)}")
+    except Exception as exc:
+        print(f"Desk marks auto-set failed: {exc}")
 
     try:
         tg = TelegramPublisher()

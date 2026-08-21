@@ -139,6 +139,8 @@ def _public_pack(pack: dict | None) -> dict | None:
         "copy_source": str(pack.get("copy_source") or ""),
         "degraded": catalog.parse_degraded(pack.get("degraded")),
         "degraded_labels": catalog.degraded_labels(pack.get("degraded")),
+        "age_label": catalog.pack_age_label(pack),
+        "is_today": catalog.pack_is_today(pack),
     }
 
 
@@ -157,12 +159,19 @@ def health():
     from src.paths import storage_status
 
     status = storage_status()
+    metrics: dict = {}
+    try:
+        if auth.enabled():
+            metrics = catalog.desk_metrics()
+    except Exception as exc:
+        metrics = {"error": str(exc)[:120]}
     return {
         "ok": True,
         "desk": auth.enabled(),
         "storage": status,
         "push": push.push_status(),
         "owner_telegram": bool(os.getenv("TELEGRAM_CHAT_ID", "").strip()),
+        "metrics": metrics,
     }
 
 
@@ -234,6 +243,7 @@ def today(request: Request):
     from src.paths import storage_status
 
     storage = storage_status()
+    overdue = catalog.overdue_message(editorial, pack)
     return templates.TemplateResponse(
         request,
         "today.html",
@@ -249,6 +259,7 @@ def today(request: Request):
             "history_count": catalog.editorial_history_count(),
             "storage_warn": bool(storage.get("warn_no_volume")),
             "next_check": catalog.next_check_label(),
+            "overdue_today": overdue,
         },
     )
 
@@ -470,4 +481,6 @@ def api_mark(request: Request, body: MarkBody):
         raise HTTPException(400, "bad platform") from None
     if not pack:
         raise HTTPException(404, "unknown short")
+    state = "on" if body.posted else "off"
+    print(f"[desk] mark short_id={body.id} platform={body.platform} {state}")
     return JSONResponse({"ok": True, "marks": pack.get("marks")})

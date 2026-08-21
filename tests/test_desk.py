@@ -174,7 +174,7 @@ def test_public_pack_never_uses_filename_slug(tmp_path, monkeypatch):
         "title": "short_20260811_2200_bitcoin_stuck_as_etf_inflows_o",
         "ig_caption": "",
         "threads_text": "short 20260811 2200 bitcoin stuck as etf inflows o",
-        "marks": {"tiktok": False, "instagram": False, "threads": False},
+        "marks": {"tiktok": False, "instagram": False, "threads": False, "youtube": False},
     }
     monkeypatch.setattr("src.desk.catalog.list_carousel_slides", lambda: [])
     monkeypatch.setattr("src.desk.catalog.carousel_caption_text", lambda: pack["title"])
@@ -262,6 +262,7 @@ def test_login_and_today(tmp_path, monkeypatch):
     health = client.get("/health")
     assert health.status_code == 200
     assert health.json()["ok"] is True
+    assert "metrics" in health.json()
     anon = TestClient(app, follow_redirects=False)
     assert anon.get("/media/latest.mp4").status_code == 401
 
@@ -281,3 +282,93 @@ def test_health_without_password(monkeypatch):
     assert "storage" in body
     assert "path" in body["storage"]
     assert client.get("/").status_code == 404
+
+
+def test_overdue_age_gates_stale_short(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    video = videos / "short.mp4"
+    video.write_bytes(b"fake-mp4")
+    monkeypatch.setenv("DESK_DB", str(tmp_path / "desk.sqlite"))
+    db.reset_init_for_tests()
+    monkeypatch.setattr(catalog, "STORAGE", tmp_path)
+    monkeypatch.setattr(catalog, "VIDEOS_DIR", videos)
+    monkeypatch.setattr(catalog, "LATEST_FILE", tmp_path / "desk_latest.json")
+    catalog.write_desk_pack(
+        title="Old bitcoin short",
+        video_path=video,
+        work_dir=tmp_path / "render",
+        ig_caption="caption here for ig",
+        youtube_url="https://youtu.be/oldvid",
+    )
+    latest = catalog.load_latest()
+    assert latest is not None
+    old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE shorts SET created_at = ?, updated_at = ? WHERE id = ?",
+            (old, old, latest["id"]),
+        )
+        conn.commit()
+    stale = catalog.load_latest()
+    assert catalog.pack_is_today(stale) is False
+    assert "дн" in catalog.pack_age_label(stale)
+    overdue = catalog.overdue_message([], stale)
+    assert "TikTok" not in overdue
+    assert "IG" not in overdue
+    assert "YouTube" not in overdue
+    tabs = catalog.desk_tabs(
+        {
+            **stale,
+            "marks": {
+                "tiktok": False,
+                "instagram": False,
+                "threads": False,
+                "youtube": False,
+            },
+        },
+        [],
+    )
+    assert all(t["badge"] == 0 for t in tabs if t["id"] in ("tiktok", "instagram", "short"))
+
+
+def test_mark_platforms_posted_and_youtube(tmp_path, monkeypatch):
+    from src.publishers.crosspost import desk_platforms_from_crosspost
+
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    video = videos / "short.mp4"
+    video.write_bytes(b"fake-mp4")
+    monkeypatch.setenv("DESK_DB", str(tmp_path / "desk.sqlite"))
+    db.reset_init_for_tests()
+    monkeypatch.setattr(catalog, "STORAGE", tmp_path)
+    monkeypatch.setattr(catalog, "VIDEOS_DIR", videos)
+    monkeypatch.setattr(catalog, "LATEST_FILE", tmp_path / "desk_latest.json")
+    pack = catalog.write_desk_pack(
+        title="Fresh short",
+        video_path=video,
+        work_dir=tmp_path / "render",
+        ig_caption="ig caption body",
+        youtube_url="https://youtu.be/abc123",
+    )
+    platforms = desk_platforms_from_crosspost(
+        {"results": {"tiktok": {"url": "x"}, "instagram_reel": {"url": "y"}}},
+        youtube_url="https://youtu.be/abc123",
+    )
+    assert platforms == ["tiktok", "instagram", "youtube"]
+    updated = catalog.mark_platforms_posted(
+        short_id=pack["id"],
+        platforms=platforms,
+    )
+    assert updated["marks"]["tiktok"] is True
+    assert updated["marks"]["instagram"] is True
+    assert updated["marks"]["youtube"] is True
+    overdue = catalog.overdue_message([], updated)
+    assert "TikTok" not in overdue
+    assert "YouTube" not in overdue
+    metrics = catalog.desk_metrics()
+    assert metrics["posted_youtube"] == 1
+    assert metrics["posted_tiktok"] == 1
+    assert metrics["latest_is_today"] is True

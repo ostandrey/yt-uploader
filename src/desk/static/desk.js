@@ -360,11 +360,32 @@
     box.addEventListener("focus", () => box.select());
     box.addEventListener("click", () => box.select());
   });
+  function adjustTabBadge(tabId, delta) {
+    const tab = document.querySelector(`[data-tab="${tabId}"]`);
+    if (!tab || !delta) return;
+    let badge = tab.querySelector(".desk-tab-badge");
+    let n = badge ? parseInt(badge.textContent || "0", 10) || 0 : 0;
+    n = Math.max(0, n + delta);
+    if (n > 0) {
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "desk-tab-badge";
+        tab.appendChild(badge);
+      }
+      badge.textContent = String(n);
+      tab.setAttribute("data-count", String(n));
+    } else if (badge) {
+      badge.remove();
+      tab.removeAttribute("data-count");
+    }
+  }
+
   document.querySelectorAll("[data-mark]").forEach((box) => {
     box.addEventListener("change", async () => {
       const platform = box.getAttribute("data-mark");
       const id = pack.id;
       if (!id) return;
+      const wasChecked = !box.checked;
       try {
         const res = await fetch("/api/mark", {
           method: "POST",
@@ -385,10 +406,24 @@
             tick.remove();
           }
         }
+        const ytBadge = document.getElementById("yt-mark-badge");
+        if (platform === "youtube" && ytBadge) {
+          ytBadge.hidden = !box.checked;
+        }
+        if (pack.is_today) {
+          const delta = box.checked ? -1 : 1;
+          if (platform === "tiktok" || platform === "instagram") {
+            adjustTabBadge(platform, delta);
+            adjustTabBadge("short", delta);
+          } else if (platform === "youtube") {
+            adjustTabBadge("short", delta);
+          }
+        }
+        if (pack.marks) pack.marks[platform] = box.checked;
         toast(box.checked ? "Позначено як запощено" : "Знято позначку");
         syncDock();
       } catch (err) {
-        box.checked = !box.checked;
+        box.checked = wasChecked;
         toast("Не збереглось", false);
       }
     });
