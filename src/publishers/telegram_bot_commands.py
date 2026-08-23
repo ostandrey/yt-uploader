@@ -300,17 +300,34 @@ def poll_commands_once() -> int:
     if not token or not owner:
         return 0
 
+    from src.ops.retry import call_with_retry
+
     offset = get_bot_update_offset()
-    response = requests.get(
-        f"https://api.telegram.org/bot{token}/getUpdates",
-        params={
-            "offset": offset,
-            "timeout": 0,
-            "allowed_updates": '["message","callback_query"]',
-        },
-        timeout=15,
-    )
-    data = response.json()
+
+    def _get_updates():
+        response = requests.get(
+            f"https://api.telegram.org/bot{token}/getUpdates",
+            params={
+                "offset": offset,
+                "timeout": 0,
+                "allowed_updates": '["message","callback_query"]',
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    try:
+        data = call_with_retry(
+            _get_updates,
+            max_attempts=3,
+            backoff=(2, 4, 8),
+            exceptions=(requests.RequestException,),
+            label="telegram.getUpdates",
+        )
+    except requests.RequestException as exc:
+        log.warning("getUpdates failed after retries: %s", exc)
+        return 0
     if not data.get("ok"):
         log.warning("getUpdates failed: %s", data)
         return 0

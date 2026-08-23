@@ -27,6 +27,7 @@ from src.publishers.pending_publish import (
     auto_publish_enabled,
     due_for_publish,
     hold_scheduled,
+    pending_queue_snapshot,
     publish_due_shorts,
 )
 
@@ -47,17 +48,30 @@ def main() -> None:
             print(f"No scheduled entry found for {video_id}")
         return
 
-    enabled = auto_publish_enabled()
+    from src.publishers.runtime_settings import auto_publish_resolved
+
+    enabled, source = auto_publish_resolved()
     delay = auto_publish_delay_minutes()
-    print(f"Auto-publish: {'ON' if enabled else 'OFF'} (delay {delay} min)")
+    print(f"Auto-publish: {'ON' if enabled else 'OFF'} (source={source}, delay {delay} min)")
 
     if not enabled:
         print("Disabled. Set YOUTUBE_AUTO_PUBLISH=1 or enable in coin_wire.yaml")
+        snap = pending_queue_snapshot()
+        print(
+            f"Queue snapshot: total={snap['total']} by_status={snap['by_status']} "
+            f"due_now={snap['due_now']}"
+        )
         return
 
     due = due_for_publish()
     if not due:
+        snap = pending_queue_snapshot()
         print("Nothing due for publish.")
+        print(
+            f"Queue snapshot: total={snap['total']} by_status={snap['by_status']} "
+            f"scheduled={snap['scheduled']} future={snap['scheduled_future']} "
+            f"due_now={snap['due_now']}"
+        )
         return
 
     print(f"Due: {len(due)} video(s)")

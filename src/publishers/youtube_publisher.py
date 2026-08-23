@@ -161,14 +161,35 @@ class YouTubePublisher:
             return False
 
     def set_privacy(self, video_id: str, privacy_status: str) -> None:
-        response = self.service.videos().list(part="status", id=video_id).execute()
+        from src.ops.retry import call_with_retry
+
+        def _list():
+            return self.service.videos().list(part="status", id=video_id).execute()
+
+        response = call_with_retry(
+            _list,
+            max_attempts=3,
+            backoff=(2, 4, 8),
+            exceptions=(HttpError, OSError, TimeoutError),
+            label="youtube.videos.list",
+        )
         items = response.get("items", [])
         if not items:
             raise RuntimeError(f"Video not found: {video_id}")
 
         item = items[0]
         item["status"]["privacyStatus"] = privacy_status
-        self.service.videos().update(part="status", body=item).execute()
+
+        def _update():
+            return self.service.videos().update(part="status", body=item).execute()
+
+        call_with_retry(
+            _update,
+            max_attempts=3,
+            backoff=(2, 4, 8),
+            exceptions=(HttpError, OSError, TimeoutError),
+            label="youtube.videos.update",
+        )
 
     @staticmethod
     def short_url(video_id: str) -> str:

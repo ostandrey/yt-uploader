@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shutil
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 from zoneinfo import ZoneInfo
 
 from src.desk import db
@@ -37,6 +40,7 @@ LATEST_FILE = STORAGE / "desk_latest.json"
 HISTORY_FILE = STORAGE / "desk_history.json"
 PENDING_FILE = STORAGE / "pending_uploads.json"
 USED_FILE = STORAGE / "used_short_articles.json"
+EDITORIAL_LOCK_FILE = STORAGE / "editorial.lock"
 
 DEGRADED_UA = {
     "no_music": "немає музики",
@@ -61,6 +65,62 @@ def degraded_labels(raw: Any) -> list[str]:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _stable_editorial_id(text: str) -> str:
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:10]
+    return f"e-{digest}"
+
+
+@contextmanager
+def editorial_lock(timeout_sec: float = 8.0, *, required: bool = False) -> Iterator[None]:
+    """Cross-process lock for editorial read-modify-write (desk + worker jobs)."""
+    EDITORIAL_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(EDITORIAL_LOCK_FILE, "a+", encoding="utf-8")
+    deadline = time.monotonic() + timeout_sec
+    locked = False
+    try:
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    if required:
+                        handle.close()
+                        raise TimeoutError(
+                            f"editorial.lock busy >{timeout_sec}s"
+                        ) from None
+                    break
+                time.sleep(0.05)
+        yield
+    finally:
+        if locked:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+        try:
+            handle.close()
+        except Exception:
+            pass
 
 
 def write_desk_pack(
@@ -300,6 +360,8 @@ def _day_label(day: str) -> str:
 
 
 def _json_editorial_items() -> list[dict[str, Any]]:
+    from src.desk.items import apply_status, normalize_status
+
     path = _editorial_path()
     if not path.exists():
         return []
@@ -319,36 +381,44 @@ def _json_editorial_items() -> list[dict[str, Any]]:
             continue
         created_at = str(item.get("created_at") or item.get("ts") or "").strip()
         item_id = str(item.get("id") or "").strip() or f"e{index}-{hash(text) & 0xFFFF:x}"
-        out.append(
-            {
-                "id": item_id,
-                "kind": str(item.get("kind") or "note"),
-                "label": str(item.get("label") or item.get("kind") or "Copy"),
-                "text": text,
-                "created_at": created_at,
-                "done": bool(item.get("done")),
-            }
-        )
+        row = {
+            "id": item_id,
+            "kind": str(item.get("kind") or "note"),
+            "label": str(item.get("label") or item.get("kind") or "Copy"),
+            "text": text,
+            "created_at": created_at,
+            "done": bool(item.get("done")),
+            "status": str(item.get("status") or ""),
+            "skip_reason": str(item.get("skip_reason") or ""),
+        }
+        out.append(apply_status(row, normalize_status(row)))
     return out
 
 
 def _raw_editorial_items() -> list[dict[str, Any]]:
+    from src.desk.items import apply_status, normalize_status
+
     json_items = _json_editorial_items()
     try:
         db.migrate_editorial_from_json(json_items)
         rows = db.list_editorial()
     except Exception:
         rows = []
-    return rows or json_items
+    source = rows or json_items
+    return [apply_status(row, normalize_status(row)) for row in source]
 
 
 def _enrich_editorial(item: dict[str, Any], now: datetime) -> dict[str, Any]:
+    from src.desk.items import DESK_POSTED, DESK_SKIPPED, apply_status, normalize_status
+
     created_at = str(item.get("created_at") or "")
-    done = bool(item.get("done"))
+    status = normalize_status(item)
+    item = apply_status(item, status, reason=str(item.get("skip_reason") or ""))
+    done = status == DESK_POSTED
     age_hours = _age_hours(created_at, now)
-    is_new = (not done) and age_hours is not None and age_hours < 8
+    is_new = (status != DESK_POSTED and status != DESK_SKIPPED) and age_hours is not None and age_hours < 8
     kind = str(item.get("kind") or "note")
-    if kind in {"opinion", "question", "recap", "reflection", "snapshot"}:
+    if kind in {"opinion", "question", "recap", "reflection", "snapshot", "news"}:
         tab = "threads"
     elif kind in {"context", "poll", "digest"}:
         tab = "telegram"
@@ -357,15 +427,25 @@ def _enrich_editorial(item: dict[str, Any], now: datetime) -> dict[str, Any]:
     text = str(item.get("text") or "")
     first = (text.splitlines()[0] if text else "").strip()
     snip = first if len(first) <= 72 else first[:71].rstrip() + "…"
+    if status == DESK_SKIPPED:
+        badge, badge_kind = "ПРОПУСК", "old"
+    elif done:
+        badge, badge_kind = "ГОТОВО", "done"
+    elif is_new:
+        badge, badge_kind = "НОВЕ", "new"
+    else:
+        badge, badge_kind = "РАНІШЕ", "old"
     row = dict(item)
     row.update(
         {
             "kind": kind,
             "tab": tab,
             "day": _day_key(created_at),
+            "status": status,
+            "done": done,
             "is_new": is_new,
-            "badge": "НОВЕ" if is_new else ("ГОТОВО" if done else "РАНІШЕ"),
-            "badge_kind": "new" if is_new else ("done" if done else "old"),
+            "badge": badge,
+            "badge_kind": badge_kind,
             "when": _short_ts(created_at) if created_at else "",
             "age": _age_label(age_hours),
             "snip": snip,
@@ -392,37 +472,24 @@ def next_check_label(interval_minutes: int = 30) -> str:
 
 
 def load_editorial_items(*, scope: str = "today") -> list[dict[str, Any]]:
-    now = datetime.now(timezone.utc)
-    today = _today_key()
-    out: list[dict[str, Any]] = []
-    for item in _raw_editorial_items():
-        row = _enrich_editorial(item, now)
-        day = str(row.get("day") or today)
-        if scope == "today" and day != today:
-            continue
-        if scope == "history" and day == today:
-            continue
-        out.append(row)
-    out.sort(
-        key=lambda row: (
-            bool(row.get("done")),
-            not bool(row.get("is_new")),
-            str(row.get("created_at") or ""),
-        )
-    )
-    return out
+    from src.desk.items import get_desk_items
+
+    return get_desk_items(scope=scope, item_type="editorial")
 
 
 def editorial_history_count() -> int:
-    today = _today_key()
-    return sum(1 for item in _raw_editorial_items() if _day_key(str(item.get("created_at") or "")) != today)
+    from src.desk.items import get_desk_items
+
+    return len(get_desk_items(scope="history", item_type="editorial"))
 
 
-def history_page() -> dict[str, Any]:
-    today = _today_key()
+def history_page(*, page: int = 1, page_size: int = 7) -> dict[str, Any]:
+    from math import ceil
+
+    from src.desk.items import get_desk_items
+
     groups: dict[str, dict[str, Any]] = {}
-    now = datetime.now(timezone.utc)
-    for item in load_editorial_items(scope="history"):
+    for item in get_desk_items(scope="history"):
         day = str(item.get("day") or "")
         if not day:
             continue
@@ -430,72 +497,226 @@ def history_page() -> dict[str, Any]:
             day,
             {"day": day, "label": _day_label(day), "editorial": [], "shorts": []},
         )
-        bucket["editorial"].append(item)
-    for short in db.list_shorts(80):
-        day = _day_key(str(short.get("updated_at") or short.get("created_at") or ""))
-        if not day or day == today:
-            continue
-        bucket = groups.setdefault(
-            day,
-            {"day": day, "label": _day_label(day), "editorial": [], "shorts": []},
-        )
-        row = dict(short)
-        row["when"] = _short_ts(str(short.get("updated_at") or ""))
-        bucket["shorts"].append(row)
+        if item.get("item_type") == "short":
+            bucket["shorts"].append(item)
+        else:
+            bucket["editorial"].append(item)
     ordered = sorted(groups.values(), key=lambda row: str(row.get("day") or ""), reverse=True)
+    total_days = len(ordered)
+    page_size = max(1, min(int(page_size or 7), 31))
+    total_pages = max(1, ceil(total_days / page_size) if total_days else 1)
+    page = max(1, min(int(page or 1), total_pages))
+    start = (page - 1) * page_size
+    slice_groups = ordered[start : start + page_size]
     from src.paths import storage_status
 
     storage = storage_status()
     return {
-        "groups": ordered,
-        "count": sum(len(g["editorial"]) + len(g["shorts"]) for g in ordered),
+        "groups": slice_groups,
+        "count": sum(len(g["editorial"]) + len(g["shorts"]) for g in slice_groups),
+        "total_count": sum(len(g["editorial"]) + len(g["shorts"]) for g in ordered),
+        "total_days": total_days,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
         "storage_warn": bool(storage.get("warn_no_volume")),
         "storage_path": storage.get("path") or "",
     }
 
 
 def desk_stamp() -> dict[str, Any]:
+    from src.desk.items import DESK_QUEUED, normalize_status
+
     latest = load_latest() or {}
     editorial = load_editorial_items(scope="today")
+    open_n = sum(1 for item in editorial if normalize_status(item) == DESK_QUEUED)
+    newest = ""
+    if editorial:
+        newest = max(str(item.get("created_at") or "") for item in editorial)
     return {
         "editorial": len(editorial),
-        "open": sum(1 for item in editorial if not item.get("done")),
+        "open": open_n,
         "latest_at": str(latest.get("updated_at") or ""),
-        "newest": str((editorial[0] or {}).get("created_at") or "") if editorial else "",
+        "pack_id": latest.get("id"),
+        "pack_updated_at": str(latest.get("updated_at") or latest.get("created_at") or ""),
+        "newest": newest,
+        "history_count": editorial_history_count(),
+        "next_check": next_check_label(),
     }
 
 
-def write_editorial_items(items: list[dict[str, Any]]) -> None:
+def empty_panel_copy(panel: str, *, next_check: str = "", has_pack: bool = False) -> dict[str, str]:
+    """Operator-facing empty states — explain why, not just «немає»."""
+    check = next_check or next_check_label()
+    if panel == "short":
+        if has_pack:
+            return {"title": "", "body": ""}
+        return {
+            "title": "Short ще не готовий",
+            "body": f"TikTok / IG / Reel з’являться після рендеру. {check}",
+        }
+    if panel == "tiktok":
+        return {
+            "title": "Немає Short для TikTok",
+            "body": f"Чекаємо ранковий або вечірній пайплайн. {check}",
+        }
+    if panel == "instagram":
+        return {
+            "title": "Немає Short для Instagram",
+            "body": f"Reel і карусель підтягнуться з паку. {check}",
+        }
+    if panel == "threads":
+        return {
+            "title": "Немає постів для Threads",
+            "body": (
+                "News / snapshot / reflection з’являться після job. "
+                f"Відкриті з учора лишаються тут до 36 год. {check}"
+            ),
+        }
+    if panel == "telegram":
+        return {
+            "title": "Немає постів для Telegram",
+            "body": f"Контекст / digest з’являться з editorial job. {check}",
+        }
+    return {"title": "Порожньо", "body": check}
+
+
+def editorial_public_row(item: dict[str, Any]) -> dict[str, Any]:
+    """JSON shape for soft-refresh + API."""
+    return {
+        "id": item.get("id"),
+        "kind": item.get("kind"),
+        "label": item.get("label"),
+        "text": item.get("text"),
+        "tab": item.get("tab"),
+        "status": item.get("status"),
+        "done": bool(item.get("done")),
+        "skip_reason": item.get("skip_reason") or "",
+        "badge": item.get("badge"),
+        "badge_kind": item.get("badge_kind"),
+        "is_new": bool(item.get("is_new")),
+        "age": item.get("age") or "",
+        "snip": item.get("snip") or "",
+        "created_at": item.get("created_at") or "",
+    }
+
+
+
+def write_editorial_items(
+    items: list[dict[str, Any]],
+    *,
+    _locked: bool = False,
+) -> None:
+    if not _locked:
+        with editorial_lock(required=True):
+            write_editorial_items(items, _locked=True)
+        return
+
+    from src.desk.items import apply_status, normalize_status
+
     STORAGE.mkdir(parents=True, exist_ok=True)
     now = _now()
-    payload_items = [
-        {
-            "id": str(item.get("id") or f"e-{hash(str(item.get('text') or '')) & 0xFFFFF:x}"),
-            "kind": str(item.get("kind") or "note"),
-            "label": str(item.get("label") or item.get("kind") or "Copy"),
-            "text": str(item.get("text") or "").strip(),
-            "created_at": str(item.get("created_at") or now),
-            "done": bool(item.get("done")),
-        }
-        for item in items
-        if str(item.get("text") or "").strip()
-    ]
+    payload_items = []
+    for item in items:
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        item_id = str(item.get("id") or "").strip() or _stable_editorial_id(text)
+        row = apply_status(
+            {
+                "id": item_id,
+                "kind": str(item.get("kind") or "note"),
+                "label": str(item.get("label") or item.get("kind") or "Copy"),
+                "text": text,
+                "created_at": str(item.get("created_at") or now),
+                "done": bool(item.get("done")),
+                "status": str(item.get("status") or ""),
+                "skip_reason": str(item.get("skip_reason") or ""),
+            },
+            normalize_status(item),
+            reason=str(item.get("skip_reason") or ""),
+        )
+        payload_items.append(row)
     payload = {"updated_at": now, "items": payload_items}
     _editorial_path().write_text(json.dumps(payload, indent=2), encoding="utf-8")
     db.replace_editorial(payload_items)
 
 
+def queue_editorial_item(kind: str, label: str, text: str) -> dict[str, Any]:
+    """Insert a queued editorial under lock. Idempotent on kind+text id."""
+    from datetime import datetime, timezone
+
+    from src.desk.items import DESK_QUEUED, apply_status, normalize_status
+
+    text = (text or "").strip()
+    if not text:
+        return {"created": False, "reason": "empty"}
+    item_id = "e-" + hashlib.sha1(f"{kind}:{text}".encode("utf-8")).hexdigest()[:10]
+    with editorial_lock(required=True):
+        items = _raw_editorial_items()
+        existing = next((item for item in items if item.get("id") == item_id), None)
+        if existing:
+            status = normalize_status(existing)
+            return {
+                "id": item_id,
+                "created": False,
+                "status": status,
+                "reason": "dedup",
+            }
+        items.insert(
+            0,
+            apply_status(
+                {
+                    "id": item_id,
+                    "kind": kind,
+                    "label": label,
+                    "text": text,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                },
+                DESK_QUEUED,
+            ),
+        )
+        write_editorial_items(items, _locked=True)
+    return {"id": item_id, "created": True, "status": DESK_QUEUED, "reason": "ok"}
+
+
 def set_editorial_done(item_id: str, done: bool = True) -> Optional[dict[str, Any]]:
-    items = _raw_editorial_items()
-    found = None
-    for item in items:
-        if item.get("id") == item_id:
-            item["done"] = bool(done)
-            found = item
-            break
-    if not found:
-        return None
-    write_editorial_items(items)
+    from src.desk.items import DESK_POSTED, DESK_QUEUED, apply_status
+
+    with editorial_lock(required=True):
+        items = _raw_editorial_items()
+        found = None
+        for index, item in enumerate(items):
+            if item.get("id") == item_id:
+                found = apply_status(item, DESK_POSTED if done else DESK_QUEUED)
+                items[index] = found
+                break
+        if not found:
+            return None
+        write_editorial_items(items, _locked=True)
+    enriched = next(
+        (row for row in load_editorial_items(scope="all") if row.get("id") == item_id),
+        None,
+    )
+    return enriched or found
+
+
+def set_editorial_skipped(item_id: str, reason: str = "") -> Optional[dict[str, Any]]:
+    from src.desk.items import DESK_SKIPPED, apply_status
+
+    with editorial_lock(required=True):
+        items = _raw_editorial_items()
+        found = None
+        for index, item in enumerate(items):
+            if item.get("id") == item_id:
+                found = apply_status(item, DESK_SKIPPED, reason=reason)
+                items[index] = found
+                break
+        if not found:
+            return None
+        write_editorial_items(items, _locked=True)
     enriched = next(
         (row for row in load_editorial_items(scope="all") if row.get("id") == item_id),
         None,
@@ -581,6 +802,8 @@ def mark_platforms_posted(
 
 def desk_metrics() -> dict[str, Any]:
     """Compact ops snapshot for /health and Railway logs."""
+    from src.desk.items import DESK_QUEUED, normalize_status
+
     counts = db.mark_counts()
     latest = load_latest()
     editorial = load_editorial_items(scope="today")
@@ -595,7 +818,9 @@ def desk_metrics() -> dict[str, Any]:
         "latest_age": pack_age_label(latest),
         "latest_is_today": pack_is_today(latest),
         "overdue_today": overdue,
-        "editorial_open_today": sum(1 for item in editorial if not item.get("done")),
+        "editorial_open_today": sum(
+            1 for item in editorial if normalize_status(item) == DESK_QUEUED
+        ),
     }
 
 
@@ -635,17 +860,19 @@ def resolve_thumb(pack: dict[str, Any]) -> Optional[Path]:
 
 def desk_tabs(pack: dict | None, editorial: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Tab strip: unpublished counts (open work), not only НОВЕ."""
-    threads_kinds = {"opinion", "question", "recap", "reflection", "snapshot"}
+    from src.desk.items import DESK_QUEUED, normalize_status
+
+    threads_kinds = {"opinion", "question", "recap", "reflection", "snapshot", "news"}
     telegram_kinds = {"context", "poll", "digest"}
     threads_new = sum(
         1
         for item in editorial
-        if (not item.get("done")) and item.get("kind") in threads_kinds
+        if normalize_status(item) == DESK_QUEUED and item.get("kind") in threads_kinds
     )
     telegram_new = sum(
         1
         for item in editorial
-        if (not item.get("done")) and item.get("kind") in telegram_kinds
+        if normalize_status(item) == DESK_QUEUED and item.get("kind") in telegram_kinds
     )
     short_new = 0
     tiktok_new = 0
@@ -695,10 +922,15 @@ def stats_snapshot() -> dict[str, Any]:
         history.append(row)
 
     editorial = load_editorial_items(scope="all")
-    editorial_new = sum(1 for item in editorial if item.get("is_new"))
-    editorial_open = sum(1 for item in editorial if not item.get("done"))
-    editorial_done = sum(1 for item in editorial if item.get("done"))
+    from src.desk.items import DESK_POSTED, DESK_QUEUED, normalize_status
 
+    editorial_new = sum(1 for item in editorial if item.get("is_new"))
+    editorial_open = sum(
+        1 for item in editorial if normalize_status(item) == DESK_QUEUED
+    )
+    editorial_done = sum(
+        1 for item in editorial if normalize_status(item) == DESK_POSTED
+    )
     tg_today = 0
     tg_state = STORAGE / "telegram_daily_state.json"
     if tg_state.exists():
@@ -778,17 +1010,18 @@ def stats_snapshot() -> dict[str, Any]:
 
 
 def overdue_message(editorial: list[dict[str, Any]], latest: Optional[dict[str, Any]]) -> str:
-    today = _today_key()
+    from src.desk.items import DESK_QUEUED, normalize_status
+
     bits: list[str] = []
     threads_n = sum(
         1
         for item in editorial
-        if not item.get("done") and item.get("tab") == "threads" and item.get("day") == today
+        if normalize_status(item) == DESK_QUEUED and item.get("tab") == "threads"
     )
     tg_n = sum(
         1
         for item in editorial
-        if not item.get("done") and item.get("tab") == "telegram" and item.get("day") == today
+        if normalize_status(item) == DESK_QUEUED and item.get("tab") == "telegram"
     )
     if threads_n:
         bits.append(f"Threads ×{threads_n}")

@@ -19,8 +19,8 @@
   </div>
   {% endif %}
 
-  <h2 class="history-title">Історія{% if count %} · {{ count }}{% endif %}</h2>
-  <p class="step">Минулі дні. Сьогоднішні пости лишаються на головній.</p>
+  <h2 class="history-title">Історія{% if total_count %} · {{ total_count }}{% endif %}</h2>
+  <p class="step">Минулі дні по {{ page_size }}. Сьогоднішні пости лишаються на головній.</p>
   <textarea id="clip-fallback" class="clip-fallback" aria-hidden="true" readonly></textarea>
 
   {% if groups %}
@@ -45,8 +45,24 @@
     {% endfor %}
   </section>
   {% endfor %}
+  <nav class="history-pager" aria-label="Сторінки історії">
+    {% if has_prev %}
+    <a class="btn-secondary" href="/history?page={{ page - 1 }}">← Новіші</a>
+    {% else %}
+    <span class="btn-secondary is-disabled" aria-disabled="true">← Новіші</span>
+    {% endif %}
+    <span class="history-page-label">{{ page }} / {{ total_pages }}</span>
+    {% if has_next %}
+    <a class="btn-secondary" href="/history?page={{ page + 1 }}">Старіші →</a>
+    {% else %}
+    <span class="btn-secondary is-disabled" aria-disabled="true">Старіші →</span>
+    {% endif %}
+  </nav>
   {% else %}
-  <p class="inline-empty">Поки порожньо — пости старші за сьогодні з’являться тут.</p>
+  <div class="empty-panel">
+    <p class="empty-title">Поки порожньо</p>
+    <p class="empty-body">Пости старші за Today з’являться тут після перших днів роботи.</p>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

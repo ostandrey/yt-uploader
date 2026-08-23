@@ -251,20 +251,41 @@ class TikTokPublisher:
                 )
 
     def _wait_publish(self, publish_id: str, *, max_wait_sec: int) -> dict:
+        from src.ops.retry import call_with_retry
+
         deadline = time.time() + max_wait_sec
         last: dict = {}
         while time.time() < deadline:
-            response = requests.post(
-                STATUS_URL,
-                headers=self._headers(),
-                json={"publish_id": publish_id},
-                timeout=30,
+            def _once():
+                return requests.post(
+                    STATUS_URL,
+                    headers=self._headers(),
+                    json={"publish_id": publish_id},
+                    timeout=30,
+                )
+
+            response = call_with_retry(
+                _once,
+                max_attempts=3,
+                backoff=(2, 4, 8),
+                exceptions=(requests.Timeout, requests.ConnectionError),
+                label="tiktok.publish_status",
             )
-            last = (response.json().get("data") or {})
+            payload = response.json() if response.content else {}
+            err = payload.get("error") if isinstance(payload, dict) else None
+            if isinstance(err, dict) and err.get("code") not in (None, 0, "ok", "OK"):
+                raise RuntimeError(f"TikTok status error: {err}")
+            last = (payload.get("data") if isinstance(payload, dict) else None) or {}
+            if not last and isinstance(payload, dict):
+                # Empty data with no error still means "not ready" — keep polling.
+                pass
             status = (last.get("status") or "").upper()
             if status in ("PUBLISH_COMPLETE", "FAILED", "SEND_TO_USER_INBOX"):
                 if status == "FAILED":
                     raise RuntimeError(f"TikTok publish failed: {last}")
                 return last
             time.sleep(5)
-        return last or {"status": "TIMEOUT", "publish_id": publish_id}
+        raise RuntimeError(
+            f"TikTok publish timeout after {max_wait_sec}s: "
+            f"{last or {'publish_id': publish_id}}"
+        )

@@ -1,6 +1,7 @@
 <article
-  class="editorial-item {% if item.is_new %}is-new{% endif %} {% if item.done %}is-done{% endif %}"
+  class="editorial-item {% if item.is_new %}is-new{% endif %} {% if item.done %}is-done{% endif %} {% if item.status == 'desk_skipped' %}is-skipped{% endif %}"
   data-editorial-id="{{ item.id }}"
+  data-status="{{ item.status or ('desk_posted' if item.done else 'desk_queued') }}"
   id="item-{{ item.id }}"
 >
   <div class="editorial-meta">
@@ -12,10 +13,16 @@
   {% endif %}
   <textarea readonly data-select data-editorial="{{ item.id }}">{{ item.text }}</textarea>
   <div class="editorial-actions">
-    <button type="button" class="btn-secondary" data-copy-text="{{ item.id }}">Copy</button>
+    <button type="button" class="btn-secondary" data-copy-text="{{ item.id }}">Копіювати</button>
+    {% if item.status != 'desk_skipped' %}
+    <button type="button" class="btn-ghost btn-compact" data-editorial-skip="{{ item.id }}">Пропустити</button>
+    {% endif %}
     <label class="mark editorial-mark">
       <input type="checkbox" data-editorial-done="{{ item.id }}" {% if item.done %}checked{% endif %}>
       <span>Вже запостив</span>
     </label>
   </div>
+  {% if item.skip_reason %}
+  <p class="editorial-skip-reason">Пропуск: {{ item.skip_reason }}</p>
+  {% endif %}
 </article>

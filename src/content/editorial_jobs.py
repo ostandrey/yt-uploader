@@ -16,8 +16,6 @@ from src.content.news_filter import build_market_takeaway
 from src.content.story_dedupe import titles_similar
 from src.desk.catalog import _raw_editorial_items, write_editorial_items
 from src.publishers.telegram_publisher import TelegramPublisher
-from src.publishers.threads_publisher import ThreadsPublisher
-
 from src.paths import coin_wire_storage
 
 STATE_FILE = coin_wire_storage() / "editorial_weekly_state.json"
@@ -83,27 +81,22 @@ def _tz(config: dict) -> str:
     return config.get("automation", {}).get("timezone", "America/New_York")
 
 
-def _push_desk_item(kind: str, label: str, text: str) -> None:
+def _push_desk_item(kind: str, label: str, text: str) -> bool:
+    """Queue editorial on desk. Returns True if the card is on desk (new or already queued)."""
     text = (text or "").strip()
     if not text:
-        return
-    import hashlib
-    from datetime import datetime, timezone
+        return False
+    from src.desk import catalog
+    from src.desk.items import DESK_QUEUED
 
-    raw = _raw_editorial_items()
-    item_id = "e-" + hashlib.sha1(f"{kind}:{text}".encode("utf-8")).hexdigest()[:10]
-    raw.insert(
-        0,
-        {
-            "id": item_id,
-            "kind": kind,
-            "label": label,
-            "text": text,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "done": False,
-        },
-    )
-    write_editorial_items(raw)
+    result = catalog.queue_editorial_item(kind, label, text)
+    item_id = str(result.get("id") or "")
+    if not result.get("created"):
+        print(
+            f"Desk item dedup skip: id={item_id} kind={kind} "
+            f"status={result.get('status')} reason={result.get('reason')}"
+        )
+        return result.get("status") == DESK_QUEUED or result.get("reason") == "dedup"
     try:
         from src.desk.push import notify_desk_push
         from src.publishers.owner_notify import desk_deep_link, format_desk_editorial_ready
@@ -119,7 +112,8 @@ def _push_desk_item(kind: str, label: str, text: str) -> None:
             f"sent={pushed.get('sent')} subs={pushed.get('subs')}"
         )
     except Exception as exc:
-            print(f"Desk push (editorial) failed: {exc}")
+        print(f"Desk push (editorial) failed: {exc}")
+    return True
 
 
 _TIER_RANK = {"breaking": 4, "insight": 3, "strong": 2, "standard": 1}
@@ -446,16 +440,7 @@ def post_threads_recap(
             recap_result = {"posted": False, "reason": "no_events", "dry_run": dry_run}
         else:
             _push_desk_item("recap", "Threads — weekly recap", text)
-            threads = ThreadsPublisher()
-            posted = False
-            url = ""
-            if not dry_run and threads.configured():
-                try:
-                    result = threads.publish_text(text)
-                    posted = True
-                    url = str(result.get("url") or "")
-                except Exception as exc:
-                    print(f"Threads recap publish failed: {exc}")
+            # Desk-only: operator posts to Threads. No Graph auto-publish.
             if not dry_run:
                 state["recap"] = 1
                 _save_state(state)
@@ -463,17 +448,22 @@ def post_threads_recap(
                 try:
                     from src.publishers.owner_notify import (
                         format_desk_editorial_ready,
-                        format_threads_pulse_posted,
                         notify_owner_status,
                     )
 
-                    lines = [format_desk_editorial_ready(kind="recap", title="Weekly recap")]
-                    if posted:
-                        lines.append(format_threads_pulse_posted(variant="weekly recap", url=url))
-                    notify_owner_status(publisher, lines)
+                    notify_owner_status(
+                        publisher,
+                        [format_desk_editorial_ready(kind="recap", title="Weekly recap")],
+                    )
                 except Exception as exc:
                     print(f"Editorial owner notify failed: {exc}")
-            recap_result = {"posted": posted, "text": text, "url": url, "dry_run": dry_run}
+            recap_result = {
+                "posted": False,
+                "desk_queued": True,
+                "text": text,
+                "url": "",
+                "dry_run": dry_run,
+            }
     if _editorial_cfg(config).get("threads_reflection", True):
         recap_result["reflection"] = post_threads_reflection(
             publisher, config, dry_run=dry_run

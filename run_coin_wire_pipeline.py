@@ -218,14 +218,21 @@ def _notify_short_ready(
 
 
 def _save_pending(video_id: str, title: str, *, config: dict) -> dict:
-    schedule = auto_publish_enabled(config)
+    from src.publishers.runtime_settings import auto_publish_resolved
+
+    schedule, source = auto_publish_resolved(config)
     delay = auto_publish_delay_minutes(config)
-    return add_pending_upload(
+    entry = add_pending_upload(
         video_id,
         title,
         schedule_auto_publish=schedule,
         delay_minutes=delay,
     )
+    print(
+        f"Pending queue: status={entry.get('status')} source={source} "
+        f"publish_at={entry.get('publish_at') or '—'} delay={delay}m"
+    )
+    return entry
 
 
 def _pick_article(fetcher: CryptoNewsFetcher) -> dict | None:

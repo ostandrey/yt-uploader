@@ -169,12 +169,14 @@ def _entity_scope_line(blob: str, title: str) -> str:
     if not body or overlap_ratio(body, title) >= 0.8:
         return ""
     scope = _SCOPE_LEAD.sub("", _scrub(scope_m.group(1)))
-    scope = _clip_clause(_without_when(scope), 14)
-    if not scope or len(scope.split()) < 2:
+    scope = _clip_clause(_without_when(scope), 18)
+    if not scope or len(scope.split()) < 4:
         return ""
     if scope[0].isupper() and not _BODY_NAME.match(scope):
         scope = scope[0].lower() + scope[1:]
     line = f"The {body} will address {scope}."
+    if len(line.split()) < 12:
+        return ""
     if overlap_ratio(line, title) >= 0.55:
         return ""
     if not is_complete_clause(line):
@@ -194,27 +196,122 @@ def _context_candidates(desc: str, script: str) -> list[str]:
     return out
 
 
+def _novel_tokens(text: str, title: str) -> list[str]:
+    stop = {
+        "the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with",
+        "from", "by", "as", "at", "is", "are", "was", "were", "be", "been",
+        "its", "it", "this", "that", "amid", "after", "before", "over",
+    }
+    title_toks = {w for w in re.findall(r"[a-z0-9]+", title.lower()) if w not in stop}
+    out: list[str] = []
+    for w in re.findall(r"[a-z0-9]+", text.lower()):
+        if w in stop or w in title_toks or len(w) < 3:
+            continue
+        if w not in out:
+            out.append(w)
+    return out
+
+
 def _context_copy(desc: str, script: str, title: str) -> str:
+    """CONTEXT slide must carry weight — not a 6-word stub under a long hook.
+
+    Prefer lines that add *new* facts (Nomura, Type 1, FSA…) even when they
+    share some headline words. Hard distinct-from rejects those and left a
+    thin stub on desk carousels.
+    """
+    min_words, max_words = 12, 22
     composed = _entity_scope_line(f"{desc} {script}", title)
-    if composed:
+    if composed and len(composed.split()) >= min_words:
         return composed
-    scored: list[tuple[float, int, str]] = []
+    scored: list[tuple[int, float, int, str]] = []
     for raw in _context_candidates(desc, script):
-        text = _clip_clause(_without_when(raw), 18)
-        if not text or len(text.split()) < 6:
+        text = _clip_clause(_without_when(raw), max_words)
+        if not text or len(text.split()) < min_words:
             continue
         if not text[0].isupper():
             continue
-        if not _distinct_from(text, title):
-            continue
         if not is_complete_clause(text):
             continue
+        # Near-echo of the headline — skip. Soft overlap with new facts — keep.
+        if overlap_ratio(text, title) >= 0.72:
+            continue
+        novel = _novel_tokens(text, title)
+        if len(novel) < 3:
+            continue
         words = len(text.split())
-        scored.append((-overlap_ratio(text, title), -abs(words - 14), text))
+        scored.append((len(novel), -overlap_ratio(text, title), words, text))
     if scored:
         scored.sort(reverse=True)
-        return scored[0][2].rstrip(".") + "."
-    return "The outlet published the details. We don't add numbers."
+        return scored[0][3].rstrip(".") + "."
+    # Stitch short novel clauses (e.g. Nomura + license) instead of a thin stub.
+    bits: list[str] = []
+    seen_novel: set[str] = set()
+    for raw in _context_candidates(desc, script):
+        text = _clip_clause(_without_when(raw), 14)
+        if not text or len(text.split()) < 5:
+            continue
+        if overlap_ratio(text, title) >= 0.72:
+            continue
+        novel = _novel_tokens(text, title)
+        if len(novel) < 2:
+            continue
+        if seen_novel & set(novel):
+            continue
+        seen_novel.update(novel)
+        bits.append(text.rstrip("."))
+        if len(" ".join(bits).split()) >= min_words:
+            break
+    if bits and len(" ".join(bits).split()) >= 8:
+        return ". ".join(bits) + "."
+    return _context_fallback(desc, script, title)
+
+
+def _context_fallback(desc: str, script: str, title: str) -> str:
+    """Avoid the same generic outlet line on every thin CONTEXT slide."""
+    blob = f"{title}. {desc}. {script}"
+    agency = re.search(
+        r"\b(SEC|CFTC|Fed|FOMC|OCC|FDIC|ESMA|FCA|Treasury|BlackRock|Fidelity|"
+        r"Coinbase|Binance|Grayscale|MicroStrategy)\b",
+        blob,
+        re.I,
+    )
+    money = _MONEY.search(blob)
+    who = agency.group(0) if agency else ""
+    if who.lower() in {"the fed", "fed"}:
+        who = "Fed"
+    novel = _novel_tokens(blob, title)
+    if who and money:
+        return (
+            f"{who} sits in the same story as {money.group(1).strip()}. "
+            f"We keep the figure as reported."
+        )
+    if who and novel:
+        detail = " ".join(novel[:4])
+        return (
+            f"{who} is named alongside {detail}. "
+            f"Read the filing before trading the headline."
+        )
+    if money:
+        return (
+            f"The story cites {money.group(1).strip()} without a fuller mechanism. "
+            f"We do not invent the missing steps."
+        )
+    if novel:
+        detail = " ".join(novel[:5])
+        return (
+            f"Extra color in the piece: {detail}. "
+            f"Primary documents still decide the trade."
+        )
+    words = [w for w in re.findall(r"[A-Za-z][A-Za-z0-9'-]+", title) if len(w) > 2][:6]
+    if len(words) >= 3:
+        return (
+            f"{' '.join(words)} is the claim on the table. "
+            f"Wait for the primary document before acting."
+        )
+    return (
+        "Named parties and timing sit in the piece. "
+        "We do not invent figures beyond the story."
+    )
 
 
 def build_what_moved(content: dict[str, Any]) -> list[dict[str, str]]:
@@ -265,6 +362,14 @@ def build_what_moved(content: dict[str, Any]) -> list[dict[str, str]]:
             }
 
     context = _context_copy(desc, script, title)
+    if len(context.split()) < 12:
+        # Hard gate: never ship a thin CONTEXT slide to desk.
+        context = _context_fallback(desc, script, title)
+    if len(context.split()) < 12:
+        context = (
+            "Named parties and timing sit in the piece. "
+            "We do not invent figures beyond the story."
+        )
     last: dict[str, str] = {
         "kind": "watch",
         "rubric": "WHAT MOVED",

@@ -68,27 +68,28 @@ publishing:
     publish_poll_minutes: 5        # worker checks queue every N min
     bot_poll_seconds: 20            # listen for /autopublish commands
   tiktok:
-    enabled: true
-    privacy_level: "PUBLIC_TO_EVERYONE"   # unaudited apps may require SELF_ONLY
+    enabled: false                        # operator posts from desk (Share / save MP4)
+    privacy_level: "PUBLIC_TO_EVERYONE"   # unused while enabled=false
   instagram:
-    enabled: true                         # needs META_ACCESS_TOKEN + INSTAGRAM_USER_ID + R2
-    reel: true                            # publish Short as Reel
-    feed_image: true                      # stock photo + headline overlay (Pexels/Pixabay)
-    carousel: true                        # sometimes 2-slide carousel (headline + extra photo)
+    enabled: false                        # operator posts from desk (Reel + carousel)
+    reel: true
+    feed_image: true
+    carousel: true
     carousel_rate: 0.35
   threads:
-    enabled: true                         # news flash via news_pulse; Short-linked off
-    mode: text                            # text-only (no native video)
-    short_linked: false                   # do not echo YouTube Shorts into Threads
+    enabled: true                         # generate desk copy + push; no Graph auto-post
+    mode: text
+    short_linked: false
     engagement_questions: false
     question_rate: 0
     news_pulse:
       enabled: true
+      desk_only: true                     # queue "Threads — новина" on desk + web push
       min_tier: strong
       max_per_day: 3
       cooldown_minutes: 120
       question_rate: 0
-      skip_if_short_used: true
+      skip_if_short_used: false
   editorial:
     opinion_per_week: 3
     question_per_week: 3
@@ -129,6 +130,6 @@ automation:
     telegram_floor: ["08:00", "12:00", "17:00"]   # minimum posts by these times
     shorts: ["09:00", "18:00"]             # morning + evening scroll
     weekly_digest: "09:00"                 # Monday Telegram digest
-    threads_recap: "18:00"                 # Friday Threads recap
+    threads_recap: "18:10"                 # Fri — 10m after evening Short to avoid CPU clash
     telegram_poll_times: ["12:00"]         # Wed + Fri polls
     market_snapshot: "08:00"               # daily English price list

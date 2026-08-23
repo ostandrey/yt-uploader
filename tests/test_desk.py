@@ -90,18 +90,27 @@ def test_editorial_history_keeps_all_posts(tmp_path, monkeypatch):
     catalog.write_editorial_items(items)
     assert len(catalog.load_editorial_items(scope="all")) == 12
     today = catalog.load_editorial_items(scope="today")
-    assert {row["id"] for row in today} == {"e0"}
+    today_ids = {row["id"] for row in today}
+    # Open cards stay on Today for OPEN_TODAY_HOURS (not calendar-day only).
+    assert "e0" in today_ids
+    assert "e1" in today_ids  # ~24h ago, still queued
+    assert "e2" not in today_ids  # ~48h ago → history
     history = catalog.load_editorial_items(scope="history")
-    assert len(history) == 11
-    assert catalog.editorial_history_count() == 11
+    assert "e0" not in {row["id"] for row in history}
+    assert catalog.editorial_history_count() == len(history)
     parts = catalog.split_question_post(
         "If Goldman pays $2.25B for Neos, who controls the next ETFs?\n\nWall Street banks\nIndependent issuers"
     )
     assert parts["question"].startswith("If Goldman")
     assert parts["a"] == "Wall Street banks"
     assert parts["b"] == "Independent issuers"
-    page = catalog.history_page()
-    assert page["count"] == 11
+    page = catalog.history_page(page=1, page_size=7)
+    assert page["page"] == 1
+    assert page["total_count"] == len(history)
+    assert page["count"] <= 7  # one group per day, page_size days
+    assert page["total_pages"] >= 1
+    page2 = catalog.history_page(page=2, page_size=7)
+    assert page2["page"] == 2 or page["total_pages"] == 1
     assert page["groups"][0]["editorial"]
 
 

@@ -21,6 +21,22 @@ log = logging.getLogger(__name__)
 GRAPH = "https://graph.threads.net/v1.0"
 
 
+def _http_get(url: str, *, label: str, **kwargs):
+    """Retry only idempotent GETs (container status). Never retry create/publish POSTs."""
+    from src.ops.retry import call_with_retry
+
+    def _once():
+        return requests.get(url, **kwargs)
+
+    return call_with_retry(
+        _once,
+        max_attempts=3,
+        backoff=(2, 4, 8),
+        exceptions=(requests.Timeout, requests.ConnectionError),
+        label=label,
+    )
+
+
 class ThreadsPublisher:
     def __init__(
         self,
@@ -132,8 +148,9 @@ class ThreadsPublisher:
     def _wait_container(self, creation_id: str, *, max_wait_sec: int) -> None:
         deadline = time.time() + max_wait_sec
         while time.time() < deadline:
-            response = requests.get(
+            response = _http_get(
                 f"{GRAPH}/{creation_id}",
+                label="threads.wait_container",
                 params={
                     "fields": "status,error_message",
                     "access_token": self.access_token,

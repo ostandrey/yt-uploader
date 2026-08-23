@@ -192,15 +192,26 @@ class InstagramPublisher:
         return media_id
 
     def _wait_container(self, creation_id: str, *, max_wait_sec: int) -> None:
+        from src.ops.retry import call_with_retry
+
         deadline = time.time() + max_wait_sec
         while time.time() < deadline:
-            response = requests.get(
-                f"{GRAPH}/{creation_id}",
-                params={
-                    "fields": "status_code,status",
-                    "access_token": self.access_token,
-                },
-                timeout=30,
+            def _once():
+                return requests.get(
+                    f"{GRAPH}/{creation_id}",
+                    params={
+                        "fields": "status_code,status",
+                        "access_token": self.access_token,
+                    },
+                    timeout=30,
+                )
+
+            response = call_with_retry(
+                _once,
+                max_attempts=3,
+                backoff=(2, 4, 8),
+                exceptions=(requests.Timeout, requests.ConnectionError),
+                label="instagram.wait_container",
             )
             data = response.json()
             status = (data.get("status_code") or "").upper()

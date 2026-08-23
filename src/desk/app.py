@@ -38,6 +38,11 @@ class EditorialDoneBody(BaseModel):
     done: bool = True
 
 
+class EditorialSkipBody(BaseModel):
+    id: str
+    reason: str = ""
+
+
 class MarkBody(BaseModel):
     id: int
     platform: str
@@ -156,6 +161,7 @@ def service_worker():
 
 @app.get("/health")
 def health():
+    from src.ops.scheduler_state import read_state
     from src.paths import storage_status
 
     status = storage_status()
@@ -165,6 +171,8 @@ def health():
             metrics = catalog.desk_metrics()
     except Exception as exc:
         metrics = {"error": str(exc)[:120]}
+    scheduler = read_state()
+    short_job = (scheduler.get("jobs") or {}).get("job_short") or {}
     return {
         "ok": True,
         "desk": auth.enabled(),
@@ -172,6 +180,17 @@ def health():
         "push": push.push_status(),
         "owner_telegram": bool(os.getenv("TELEGRAM_CHAT_ID", "").strip()),
         "metrics": metrics,
+        "scheduler": {
+            "updated_at": scheduler.get("updated_at") or "",
+            "job_short": {
+                "status": short_job.get("status"),
+                "is_running": bool(short_job.get("is_running")),
+                "stale": bool(short_job.get("stale")),
+                "last_started_at": short_job.get("last_started_at"),
+                "last_finished_at": short_job.get("last_finished_at"),
+                "next_run": short_job.get("next_run"),
+            },
+        },
     }
 
 
@@ -244,6 +263,12 @@ def today(request: Request):
 
     storage = storage_status()
     overdue = catalog.overdue_message(editorial, pack)
+    next_check = catalog.next_check_label()
+    stamp = catalog.desk_stamp()
+    empty = {
+        name: catalog.empty_panel_copy(name, next_check=next_check, has_pack=bool(public))
+        for name in ("short", "tiktok", "instagram", "threads", "telegram")
+    }
     return templates.TemplateResponse(
         request,
         "today.html",
@@ -258,8 +283,10 @@ def today(request: Request):
             "push_enabled": push.push_configured(),
             "history_count": catalog.editorial_history_count(),
             "storage_warn": bool(storage.get("warn_no_volume")),
-            "next_check": catalog.next_check_label(),
+            "next_check": next_check,
             "overdue_today": overdue,
+            "stamp": stamp,
+            "empty": empty,
         },
     )
 
@@ -270,7 +297,11 @@ def history(request: Request):
         raise HTTPException(404, "desk disabled")
     if not _authed(request):
         return RedirectResponse("/login", status_code=303)
-    page = catalog.history_page()
+    try:
+        page = max(1, int(request.query_params.get("page") or 1))
+    except ValueError:
+        page = 1
+    page_data = catalog.history_page(page=page, page_size=7)
     return templates.TemplateResponse(
         request,
         "history.html",
@@ -278,9 +309,15 @@ def history(request: Request):
             "request": request,
             "logged_in": True,
             "nav": "history",
-            "groups": page["groups"],
-            "count": page["count"],
-            "storage_warn": page["storage_warn"],
+            "groups": page_data["groups"],
+            "count": page_data["count"],
+            "total_count": page_data.get("total_count", page_data["count"]),
+            "page": page_data["page"],
+            "page_size": page_data["page_size"],
+            "total_pages": page_data["total_pages"],
+            "has_prev": page_data["has_prev"],
+            "has_next": page_data["has_next"],
+            "storage_warn": page_data["storage_warn"],
         },
     )
 
@@ -393,6 +430,65 @@ def api_desk_stamp(request: Request):
     return JSONResponse(catalog.desk_stamp())
 
 
+@app.get("/api/desk/editorial")
+def api_desk_editorial(request: Request):
+    if not _authed(request):
+        raise HTTPException(401, "auth required")
+    scope = (request.query_params.get("scope") or "today").strip()
+    if scope not in {"today", "history", "all"}:
+        scope = "today"
+    items = [
+        catalog.editorial_public_row(item)
+        for item in catalog.load_editorial_items(scope=scope)
+    ]
+    return JSONResponse({"items": items, "stamp": catalog.desk_stamp()})
+
+
+@app.post("/api/editorial/done")
+def api_editorial_done(request: Request, body: EditorialDoneBody):
+    if not _authed(request):
+        raise HTTPException(401, "auth required")
+    item = catalog.set_editorial_done(body.id, body.done)
+    if not item:
+        raise HTTPException(404, "unknown editorial item")
+    return JSONResponse(
+        {
+            "ok": True,
+            "id": item.get("id"),
+            "done": bool(item.get("done")),
+            "status": item.get("status"),
+            "badge": item.get("badge"),
+            "badge_kind": item.get("badge_kind"),
+            "is_new": bool(item.get("is_new")),
+            "age": item.get("age") or "",
+            "stamp": catalog.desk_stamp(),
+        }
+    )
+
+
+@app.post("/api/editorial/skip")
+def api_editorial_skip(request: Request, body: EditorialSkipBody):
+    if not _authed(request):
+        raise HTTPException(401, "auth required")
+    item = catalog.set_editorial_skipped(body.id, body.reason or "operator")
+    if not item:
+        raise HTTPException(404, "unknown editorial item")
+    return JSONResponse(
+        {
+            "ok": True,
+            "id": item.get("id"),
+            "done": bool(item.get("done")),
+            "status": item.get("status"),
+            "badge": item.get("badge"),
+            "badge_kind": item.get("badge_kind"),
+            "is_new": bool(item.get("is_new")),
+            "age": item.get("age") or "",
+            "skip_reason": item.get("skip_reason") or "",
+            "stamp": catalog.desk_stamp(),
+        }
+    )
+
+
 @app.get("/api/push/public-key")
 def api_push_public_key(request: Request):
     if not _authed(request):
@@ -450,25 +546,6 @@ def api_push_test(request: Request):
     result["telegram"] = telegram
     result["status"] = push.push_status()
     return JSONResponse(result)
-
-@app.post("/api/editorial/done")
-def api_editorial_done(request: Request, body: EditorialDoneBody):
-    if not _authed(request):
-        raise HTTPException(401, "auth required")
-    item = catalog.set_editorial_done(body.id, body.done)
-    if not item:
-        raise HTTPException(404, "unknown editorial item")
-    return JSONResponse(
-        {
-            "ok": True,
-            "id": item.get("id"),
-            "done": bool(item.get("done")),
-            "badge": item.get("badge"),
-            "badge_kind": item.get("badge_kind"),
-            "is_new": bool(item.get("is_new")),
-            "age": item.get("age") or "",
-        }
-    )
 
 
 @app.post("/api/mark")

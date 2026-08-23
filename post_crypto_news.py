@@ -74,7 +74,8 @@ def main() -> None:
                 dry_run=True,
             )
             if pulse.get("dry_run"):
-                print(f"\n[DRY RUN] Threads pulse ({pulse.get('variant')}):")
+                where = "desk" if pulse.get("desk") else "Threads API"
+                print(f"\n[DRY RUN] Threads pulse → {where} ({pulse.get('variant')}):")
                 print(pulse.get("text", ""))
             elif pulse.get("reason"):
                 print(f"\nThreads pulse skip: {pulse['reason']}")
@@ -93,10 +94,17 @@ def main() -> None:
                 result["tier"],
                 pulse_cfg,
             )
-            if pulse.get("posted"):
+            if pulse.get("desk_queued"):
+                print(
+                    f"Threads desk queued ({pulse.get('variant')}): "
+                    f"{(pulse.get('text') or '')[:80]}"
+                )
+            elif pulse.get("posted"):
                 print(f"Threads pulse ({pulse.get('variant')}): {pulse.get('url')}")
             elif pulse.get("reason"):
-                print(f"Threads pulse skip: {pulse['reason']}")
+                err = str(pulse.get("error") or "").strip()
+                detail = f" — {err[:240]}" if err else ""
+                print(f"Threads pulse skip: {pulse['reason']}{detail}")
 
             from src.content.editorial_jobs import after_telegram_post
 

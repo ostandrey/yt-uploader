@@ -57,7 +57,7 @@ def test_what_moved_uses_date_not_echoed_headline():
     assert "prediction" in context.lower()
     assert "Aug" not in context
     assert not context.lower().rstrip(".").endswith((" on", " to", " for", " of"))
-    assert len(context.split()) <= 22
+    assert 12 <= len(context.split()) <= 22
     assert context.rstrip(".") != slides[0]["title"].rstrip(".")
     blob = " ".join(f"{s.get('title', '')} {s.get('body', '')}" for s in slides)
     assert "$" not in blob
@@ -113,6 +113,24 @@ def test_render_four_slides(tmp_path: Path):
     story_im = Image.open(story)
     assert story_im.size == (1080, 1920)
     assert carousel_caption({"title": "Fed holds rates"})
+
+
+def test_context_prefers_novel_facts_not_thin_stub():
+    """Headline-overlap used to kill long lines and leave a 6-word CONTEXT stub."""
+    slides = build_what_moved(
+        {
+            "title": "Laser Digital gets Japan first crypto exchange approval in 4 years",
+            "description": (
+                "The firm is backed by Nomura. Laser Digital received a Type 1 license "
+                "from Japan FSA, the first crypto exchange approval in four years amid "
+                "tighter oversight."
+            ),
+        }
+    )
+    context = next(s["title"] for s in slides if (s.get("kicker") or "").lower() == "context")
+    assert "Nomura" in context or "Type 1" in context or "FSA" in context
+    assert len(context.split()) >= 12
+    assert "outlet published" not in context.lower()
 
 
 def test_instagram_feed_assets_four_slides(tmp_path, monkeypatch):

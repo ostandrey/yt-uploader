@@ -3,7 +3,12 @@
 {% block body %}
 {% set threads_items = editorial | selectattr('tab', 'equalto', 'threads') | list %}
 {% set tg_items = editorial | selectattr('tab', 'equalto', 'telegram') | list %}
-<div class="page-wrap">
+<div class="page-wrap" id="desk-root"
+  data-stamp-editorial="{{ stamp.editorial }}"
+  data-stamp-newest="{{ stamp.newest }}"
+  data-stamp-open="{{ stamp.open }}"
+  data-stamp-pack="{{ stamp.pack_updated_at }}"
+>
   <header class="desk-header">
     <span class="brand">Coin Wire <i class="push-dot" id="push-dot" title="Push" hidden></i></span>
     <div class="header-actions">
@@ -24,8 +29,19 @@
   </div>
   {% endif %}
   {% if overdue_today %}
-  <p class="warn-inline">{{ overdue_today }}</p>
+  <p class="warn-inline" id="overdue-line">{{ overdue_today }}</p>
   {% endif %}
+
+  <div class="ops-strip" id="ops-strip" aria-live="polite">
+    <span>Відкрито: <b id="ops-open">{{ stamp.open }}</b></span>
+    <span class="ops-sep">·</span>
+    <span id="ops-next">{{ next_check }}</span>
+  </div>
+
+  <div id="desk-update-bar" class="update-bar" hidden>
+    <span id="desk-update-text">Є оновлення</span>
+    <button type="button" class="btn-primary btn-compact" id="desk-update-btn">Оновити</button>
+  </div>
 
   <section class="push-card card" id="push-card">
     <div class="push-card-copy">
@@ -44,12 +60,16 @@
   </section>
   <p id="push-hint" class="push-hint" hidden></p>
 
-  <nav class="desk-tabs" id="desk-tabs" aria-label="Платформи">
+  <nav class="desk-tabs" id="desk-tabs" role="tablist" aria-label="Платформи">
     {% for tab in tabs %}
     <button
       type="button"
+      role="tab"
       class="desk-tab {% if loop.first %}is-active{% endif %}"
       data-tab="{{ tab.id }}"
+      id="tab-{{ tab.id }}"
+      aria-selected="{% if loop.first %}true{% else %}false{% endif %}"
+      tabindex="{% if loop.first %}0{% else %}-1{% endif %}"
       {% if tab.badge %}data-count="{{ tab.badge }}"{% endif %}
     >
       <span class="desk-tab-label">{{ tab.label }}</span>
@@ -58,15 +78,17 @@
     {% endfor %}
   </nav>
   {% if next_check %}
-  <p class="desk-hint">{{ next_check }}</p>
+  <p class="desk-hint" id="desk-hint">{{ next_check }}</p>
   {% endif %}
 
-  <main class="desk-main">
+  <main class="desk-main" id="desk-main">
     <textarea id="clip-fallback" class="clip-fallback" aria-hidden="true" readonly></textarea>
 
     <div
       class="tab-panel"
       data-panel="short"
+      role="tabpanel"
+      id="panel-short"
       data-has-content="{% if pack %}1{% else %}0{% endif %}"
       hidden
     >
@@ -113,13 +135,18 @@
         {% endif %}
       </div>
       {% else %}
-      <p class="inline-empty">Short ще не готовий — TikTok / IG з’являться після рендеру.</p>
+      <div class="empty-panel">
+        <p class="empty-title">{{ empty.short.title }}</p>
+        <p class="empty-body">{{ empty.short.body }}</p>
+      </div>
       {% endif %}
     </div>
 
     <div
       class="tab-panel"
       data-panel="tiktok"
+      role="tabpanel"
+      id="panel-tiktok"
       data-has-content="{% if pack %}1{% else %}0{% endif %}"
       hidden
     >
@@ -129,8 +156,8 @@
           <h2>TikTok {% if pack.marks.tiktok %}<span class="done">✓</span>{% endif %}</h2>
         </div>
         <div class="actions">
-          <button type="button" class="btn-primary" data-share="tiktok">Share</button>
-          <button type="button" class="btn-secondary" data-copy="tiktok_caption">Copy</button>
+          <button type="button" class="btn-primary" data-share="tiktok">Поділитись</button>
+          <button type="button" class="btn-secondary" data-copy="tiktok_caption">Копіювати</button>
         </div>
         {% if pack.id %}<label class="mark"><input type="checkbox" data-mark="tiktok" {% if pack.marks.tiktok %}checked{% endif %}><span>Вже запостив</span></label>{% endif %}
         <details open>
@@ -145,13 +172,18 @@
         </details>
       </section>
       {% else %}
-      <p class="inline-empty">Немає Short для TikTok.</p>
+      <div class="empty-panel">
+        <p class="empty-title">{{ empty.tiktok.title }}</p>
+        <p class="empty-body">{{ empty.tiktok.body }}</p>
+      </div>
       {% endif %}
     </div>
 
     <div
       class="tab-panel"
       data-panel="instagram"
+      role="tabpanel"
+      id="panel-instagram"
       data-has-content="{% if pack %}1{% else %}0{% endif %}"
       hidden
     >
@@ -161,8 +193,8 @@
           <h2>Instagram Reel {% if pack.marks.instagram %}<span class="done">✓</span>{% endif %}</h2>
         </div>
         <div class="actions">
-          <button type="button" class="btn-primary" data-share="instagram">Share</button>
-          <button type="button" class="btn-secondary" data-copy="ig_caption">Copy</button>
+          <button type="button" class="btn-primary" data-share="instagram">Поділитись</button>
+          <button type="button" class="btn-secondary" data-copy="ig_caption">Копіювати</button>
         </div>
         {% if pack.id %}<label class="mark"><input type="checkbox" data-mark="instagram" {% if pack.marks.instagram %}checked{% endif %}><span>Вже запостив</span></label>{% endif %}
         <details open>
@@ -185,8 +217,8 @@
         </div>
         <div class="actions">
           <button type="button" class="btn-primary" data-save-carousel>Зберегти всі</button>
-          <button type="button" class="btn-secondary" data-share-carousel>Share</button>
-          <button type="button" class="btn-secondary" data-copy="carousel_caption">Copy підпис</button>
+          <button type="button" class="btn-secondary" data-share-carousel>Поділитись</button>
+          <button type="button" class="btn-secondary" data-copy="carousel_caption">Копіювати підпис</button>
         </div>
         <a class="btn-ghost btn-save" href="/media/ig.zip">ZIP запасний</a>
       </section>
@@ -204,46 +236,63 @@
       </section>
       {% endif %}
       {% else %}
-      <p class="inline-empty">Немає Short для Instagram.</p>
+      <div class="empty-panel">
+        <p class="empty-title">{{ empty.instagram.title }}</p>
+        <p class="empty-body">{{ empty.instagram.body }}</p>
+      </div>
       {% endif %}
     </div>
 
     <div
       class="tab-panel"
       data-panel="threads"
+      role="tabpanel"
+      id="panel-threads"
       data-has-content="{% if threads_items %}1{% else %}0{% endif %}"
       hidden
     >
+      <div class="editorial-list" data-editorial-list="threads">
       {% if threads_items %}
-      <p class="step">Threads · Copy → встав · познач «Вже запостив»</p>
+      <p class="step">Threads · Копіювати → встав · познач «Вже запостив»</p>
       {% for item in threads_items %}
       {% include "editorial_card.html" %}
       {% endfor %}
       {% else %}
-      <p class="inline-empty">Немає постів для Threads.</p>
+      <div class="empty-panel">
+        <p class="empty-title">{{ empty.threads.title }}</p>
+        <p class="empty-body">{{ empty.threads.body }}</p>
+      </div>
       {% endif %}
+      </div>
     </div>
 
     <div
       class="tab-panel"
       data-panel="telegram"
+      role="tabpanel"
+      id="panel-telegram"
       data-has-content="{% if tg_items %}1{% else %}0{% endif %}"
       hidden
     >
+      <div class="editorial-list" data-editorial-list="telegram">
       {% if tg_items %}
-      <p class="step">Telegram · Copy → встав у канал</p>
+      <p class="step">Telegram · Копіювати → встав у канал</p>
       {% for item in tg_items %}
       {% include "editorial_card.html" %}
       {% endfor %}
       {% else %}
-      <p class="inline-empty">Немає постів для Telegram.</p>
+      <div class="empty-panel">
+        <p class="empty-title">{{ empty.telegram.title }}</p>
+        <p class="empty-body">{{ empty.telegram.body }}</p>
+      </div>
       {% endif %}
+      </div>
     </div>
   </main>
 
 {% if pack %}
   <div id="dock" hidden>
-    <button type="button" class="btn-primary" id="dock-btn">Далі: Share</button>
+    <button type="button" class="btn-primary" id="dock-btn">Далі: Поділитись</button>
   </div>
 {% endif %}
 </div>

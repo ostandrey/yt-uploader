@@ -49,7 +49,9 @@ CREATE TABLE IF NOT EXISTS editorial (
     label TEXT NOT NULL DEFAULT '',
     text TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    done INTEGER NOT NULL DEFAULT 0
+    done INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT '',
+    skip_reason TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_editorial_created ON editorial(created_at);
 """
@@ -98,6 +100,11 @@ def _migrate_shorts(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE shorts ADD COLUMN degraded TEXT NOT NULL DEFAULT ''")
     if "tiktok_caption" not in cols:
         conn.execute("ALTER TABLE shorts ADD COLUMN tiktok_caption TEXT NOT NULL DEFAULT ''")
+    ed_cols = {row[1] for row in conn.execute("PRAGMA table_info(editorial)")}
+    if "status" not in ed_cols:
+        conn.execute("ALTER TABLE editorial ADD COLUMN status TEXT NOT NULL DEFAULT ''")
+    if "skip_reason" not in ed_cols:
+        conn.execute("ALTER TABLE editorial ADD COLUMN skip_reason TEXT NOT NULL DEFAULT ''")
 
 
 def upsert_short(pack: dict[str, Any]) -> dict[str, Any]:
@@ -234,28 +241,43 @@ def set_mark(short_id: int, platform: str, posted: bool) -> Optional[dict[str, A
 
 
 def list_editorial() -> list[dict[str, Any]]:
+    from src.desk.items import apply_status, normalize_status
+
     conn = connect()
     try:
-        rows = conn.execute(
-            "SELECT id, kind, label, text, created_at, done FROM editorial ORDER BY created_at DESC"
-        ).fetchall()
-        return [
-            {
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(editorial)")}
+        has_status = "status" in cols
+        has_skip = "skip_reason" in cols
+        select = "SELECT id, kind, label, text, created_at, done"
+        if has_status:
+            select += ", status"
+        if has_skip:
+            select += ", skip_reason"
+        select += " FROM editorial ORDER BY created_at DESC"
+        rows = conn.execute(select).fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            if not str(row["text"] or "").strip():
+                continue
+            item = {
                 "id": str(row["id"]),
                 "kind": str(row["kind"] or "note"),
                 "label": str(row["label"] or row["kind"] or "Copy"),
                 "text": str(row["text"] or ""),
                 "created_at": str(row["created_at"] or ""),
                 "done": bool(row["done"]),
+                "status": str(row["status"] or "") if has_status else "",
+                "skip_reason": str(row["skip_reason"] or "") if has_skip else "",
             }
-            for row in rows
-            if str(row["text"] or "").strip()
-        ]
+            out.append(apply_status(item, normalize_status(item)))
+        return out
     finally:
         conn.close()
 
 
 def replace_editorial(items: list[dict[str, Any]]) -> None:
+    from src.desk.items import apply_status, normalize_status
+
     rows = []
     seen: set[str] = set()
     for item in items:
@@ -264,16 +286,23 @@ def replace_editorial(items: list[dict[str, Any]]) -> None:
             continue
         item_id = str(item.get("id") or "").strip()
         if not item_id or item_id in seen:
-            item_id = f"e-{abs(hash(text)) & 0xFFFFF:x}"
+            import hashlib
+
+            item_id = "e-" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:10]
+            if item_id in seen:
+                item_id = f"{item_id}-{len(seen)}"
         seen.add(item_id)
+        norm = apply_status(item, normalize_status(item), reason=str(item.get("skip_reason") or ""))
         rows.append(
             (
                 item_id,
-                str(item.get("kind") or "note"),
-                str(item.get("label") or item.get("kind") or "Copy"),
+                str(norm.get("kind") or "note"),
+                str(norm.get("label") or norm.get("kind") or "Copy"),
                 text,
-                str(item.get("created_at") or _now()),
-                1 if item.get("done") else 0,
+                str(norm.get("created_at") or _now()),
+                1 if norm.get("done") else 0,
+                str(norm.get("status") or ""),
+                str(norm.get("skip_reason") or ""),
             )
         )
     with _lock:
@@ -282,8 +311,8 @@ def replace_editorial(items: list[dict[str, Any]]) -> None:
             conn.execute("DELETE FROM editorial")
             conn.executemany(
                 """
-                INSERT INTO editorial (id, kind, label, text, created_at, done)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO editorial (id, kind, label, text, created_at, done, status, skip_reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rows,
             )

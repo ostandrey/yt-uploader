@@ -94,10 +94,6 @@ def test_friday_recap_queues_reflection(tmp_path, monkeypatch):
         "src.content.editorial_jobs._push_desk_item",
         lambda kind, label, text: pushed.append((kind, text)),
     )
-    monkeypatch.setattr(
-        "src.content.editorial_jobs.ThreadsPublisher",
-        lambda: type("T", (), {"configured": lambda self: False})(),
-    )
     from src.content.editorial_log import append_event
 
     append_event(

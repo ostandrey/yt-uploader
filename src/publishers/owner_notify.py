@@ -19,6 +19,7 @@ TIER_UA = {
 EDITORIAL_KIND = {
     "opinion": ("Threads", "opinion"),
     "question": ("Threads", "question"),
+    "news": ("Threads", "news"),
     "context": ("TG", "context"),
     "recap": ("Threads", "weekly recap"),
     "reflection": ("Threads", "weekly reflection"),
@@ -30,6 +31,7 @@ EDITORIAL_KIND = {
 KIND_TAB = {
     "opinion": "threads",
     "question": "threads",
+    "news": "threads",
     "recap": "threads",
     "reflection": "threads",
     "snapshot": "threads",

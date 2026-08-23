@@ -249,6 +249,7 @@ def notify_desk_push(
         result = {"sent": 0, "failed": 0, "reason": "no_subscriptions", "errors": []}
         _remember_last(result)
         log.warning("Web Push skipped: no subscriptions at %s", SUBS_FILE)
+        _alert_push_miss(title, body, result)
         return result
 
     payload = json.dumps(
@@ -308,4 +309,59 @@ def notify_desk_push(
         "vapid_source": vapid_source(),
     }
     _remember_last(result)
+    if sent == 0:
+        _alert_push_miss(title, body, result)
     return result
+
+
+def _alert_push_miss(title: str, body: str, result: dict[str, Any]) -> None:
+    """Operator ping when desk push did not land (silent fail otherwise)."""
+    reason = str(result.get("reason") or "")
+    if reason not in {"no_subscriptions", "all_failed"}:
+        return
+    # Rate-limit: every editorial miss would otherwise spam Telegram.
+    try:
+        gate = STORAGE / "desk_push_alert_gate.json"
+        now = datetime.now(timezone.utc)
+        last: dict[str, Any] = {}
+        if gate.exists():
+            try:
+                loaded = json.loads(gate.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    last = loaded
+            except (OSError, json.JSONDecodeError):
+                last = {}
+        prev = str(last.get(reason) or "")
+        if prev:
+            try:
+                prev_dt = datetime.fromisoformat(prev.replace("Z", "+00:00"))
+                if prev_dt.tzinfo is None:
+                    prev_dt = prev_dt.replace(tzinfo=timezone.utc)
+                if (now - prev_dt).total_seconds() < 1800:
+                    log.warning("Desk push miss suppressed (rate): %s", reason)
+                    return
+            except ValueError:
+                pass
+        last[reason] = now.isoformat()
+        gate.parent.mkdir(parents=True, exist_ok=True)
+        gate.write_text(json.dumps(last, indent=2), encoding="utf-8")
+    except Exception as exc:
+        log.warning("Push alert gate failed: %s", exc)
+    try:
+        from src.publishers.telegram_publisher import TelegramPublisher
+
+        pub = TelegramPublisher()
+        if not (pub.bot_token and pub.notify_chat_id):
+            return
+        err = ", ".join(result.get("errors") or [])[:160]
+        lines = [
+            f"⚠️ Desk push miss: {reason}",
+            f"title={title[:60]}",
+            f"subs={result.get('subs')} failed={result.get('failed')}",
+        ]
+        if err:
+            lines.append(err)
+        pub.notify_owner("\n".join(lines))
+        log.warning("Alerted owner about desk push miss (%s)", reason)
+    except Exception as exc:
+        log.warning("Could not alert owner about push miss: %s", exc)

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -36,6 +37,7 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent
 PYTHON = sys.executable
 TOKEN_FILE = ROOT / "tokens" / "coin_wire_token.json"
+_SHORT_TIMEOUT_SEC = 50 * 60
 
 REQUIRED_ENV = (
     "TELEGRAM_BOT_TOKEN",
@@ -59,7 +61,60 @@ def _load_config() -> dict:
         return yaml.safe_load(handle)
 
 
-def _run_script(script: str, *args: str, quiet_ok: bool = False) -> bool:
+def _kill_process_tree(proc: subprocess.Popen) -> None:
+    """Kill the script and ffmpeg/yt children. Timeout alone leaves zombies on Linux."""
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        # CREATE_NEW_PROCESS_GROUP alone + proc.kill() does not reap ffmpeg kids.
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True,
+                timeout=15,
+                check=False,
+            )
+        except Exception:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            return
+    try:
+        proc.wait(timeout=8)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _run_script(
+    script: str,
+    *args: str,
+    quiet_ok: bool = False,
+    timeout_sec: int | None = None,
+) -> bool:
     cmd = [PYTHON, str(ROOT / script), *args]
     label = script.replace("_", " ")
     env = {
@@ -67,23 +122,48 @@ def _run_script(script: str, *args: str, quiet_ok: bool = False) -> bool:
         "PYTHONIOENCODING": "utf-8",
         "LANG": "C.UTF-8",
     }
-    result = subprocess.run(
-        cmd,
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-    )
-    stdout = (result.stdout or "").strip()
-    failed = result.returncode != 0
+    log.info("Running %s%s ...", label, f" (timeout {timeout_sec}s)" if timeout_sec else "")
+    popen_kwargs: dict = {
+        "cwd": ROOT,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "env": env,
+    }
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen(cmd, **popen_kwargs)
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        log.error(
+            "TIMEOUT %s after %ss — killing process group so the next Short slot can fire",
+            label,
+            timeout_sec,
+        )
+        _kill_process_tree(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except Exception:
+            stdout, stderr = "", ""
+        for line in str(stdout or "").strip().splitlines()[-40:]:
+            log.info("  %s", line)
+        if stderr:
+            log.error("  stderr: %s", str(stderr).strip()[-400:])
+        return False
+
+    failed = proc.returncode != 0
+    stdout = (stdout or "").strip()
     if not quiet_ok or stdout or failed:
-        log.info("Running %s ...", label)
         for line in stdout.splitlines():
             log.info("  %s", line)
     if failed:
-        log.error("FAILED %s (%s): %s", label, result.returncode, result.stderr.strip())
+        log.error("FAILED %s (%s): %s", label, proc.returncode, (stderr or "").strip())
         return False
     if not quiet_ok or stdout:
         log.info("OK: %s", label)
@@ -95,7 +175,18 @@ def job_telegram() -> None:
 
 
 def job_short() -> None:
-    _run_script("run_coin_wire_pipeline.py")
+    # Without timeout + process-group kill, hung ffmpeg/YouTube blocks evening slot
+    # (APScheduler: max instances reached).
+    from src.ops.scheduler_state import mark_job
+
+    mark_job("job_short", "running")
+    ok = False
+    try:
+        ok = _run_script("run_coin_wire_pipeline.py", timeout_sec=_SHORT_TIMEOUT_SEC)
+    finally:
+        # Always clear is_running after killpg/timeout/crash so /health is truthful.
+        mark_job("job_short", "ok" if ok else "failed")
+    return
 
 
 def job_publish_pending() -> None:
@@ -356,6 +447,8 @@ def main() -> None:
             id=f"short_{index}",
             replace_existing=True,
             misfire_grace_time=7200,
+            max_instances=1,
+            coalesce=True,
         )
 
     cleanup_hour, cleanup_minute = _parse_hhmm(cleanup_time)
@@ -425,6 +518,31 @@ def main() -> None:
         "Telegram bot poll is silent unless you send a command."
     )
     logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
+
+    try:
+        from src.ops.scheduler_state import write_schedule
+
+        short_meta: dict = {}
+        for job in scheduler.get_jobs():
+            if not str(job.id).startswith("short_"):
+                continue
+            nxt = job.next_run_time
+            short_meta[job.id] = {
+                "next_run": nxt.isoformat() if nxt else "",
+                "trigger": str(job.trigger),
+            }
+        # Collapse to one ops row for /health
+        next_runs = [m["next_run"] for m in short_meta.values() if m.get("next_run")]
+        write_schedule(
+            {
+                "job_short": {
+                    "next_run": min(next_runs) if next_runs else "",
+                    "slots": short_meta,
+                }
+            }
+        )
+    except Exception as exc:
+        log.warning("scheduler_state write failed: %s", exc)
 
     try:
         scheduler.start()

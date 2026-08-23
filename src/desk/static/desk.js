@@ -1,15 +1,18 @@
 (() => {
   const toastEl = document.getElementById("toast");
   const packEl = document.getElementById("pack-json");
-  const fallback = document.getElementById("clip-fallback") || document.getElementById("clip-fallback-editorial");
+  const fallback =
+    document.getElementById("clip-fallback") ||
+    document.getElementById("clip-fallback-editorial");
   const dock = document.getElementById("dock");
   const dockBtn = document.getElementById("dock-btn");
   const pwaHint = document.getElementById("pwa-hint");
+  const root = document.getElementById("desk-root");
   const pack = packEl ? JSON.parse(packEl.textContent) : {};
   const ORDER = ["tiktok", "instagram"];
   const SHARE_LABEL = {
-    tiktok: "Далі: Share TikTok",
-    instagram: "Далі: Share Instagram",
+    tiktok: "Далі: Поділитись TikTok",
+    instagram: "Далі: Поділитись Instagram",
   };
   let blobFile = null;
   let loading = null;
@@ -24,33 +27,199 @@
     refreshBtn.addEventListener("click", () => {
       refreshBtn.disabled = true;
       refreshBtn.textContent = "…";
-      const url = new URL(window.location.href);
-      url.searchParams.set("r", String(Date.now()));
-      window.location.replace(url.toString());
+      hardReload();
     });
   }
 
   const pageStamp = {
-    editorial: document.querySelectorAll("[data-editorial-id]").length,
-    newest: "",
+    editorial: Number(root?.dataset.stampEditorial || document.querySelectorAll("[data-editorial-id]").length || 0),
+    newest: root?.dataset.stampNewest || "",
+    open: Number(root?.dataset.stampOpen || 0),
+    pack: root?.dataset.stampPack || "",
   };
-  function reloadDesk() {
+
+  function hardReload() {
     const url = new URL(window.location.href);
     url.searchParams.set("r", String(Date.now()));
     window.location.replace(url.toString());
   }
+
+  function showUpdateBar(msg) {
+    const bar = document.getElementById("desk-update-bar");
+    const text = document.getElementById("desk-update-text");
+    const btn = document.getElementById("desk-update-btn");
+    if (!bar) {
+      hardReload();
+      return;
+    }
+    if (text) text.textContent = msg || "Є оновлення на desk";
+    bar.hidden = false;
+    if (btn && !btn.dataset.bound) {
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", hardReload);
+    }
+  }
+
+  function applyStampUi(stamp) {
+    pageStamp.editorial = Number(stamp.editorial || 0);
+    pageStamp.newest = stamp.newest || pageStamp.newest;
+    pageStamp.open = Number(stamp.open || 0);
+    pageStamp.pack = stamp.pack_updated_at || pageStamp.pack;
+    if (root) {
+      root.dataset.stampEditorial = String(pageStamp.editorial);
+      root.dataset.stampNewest = pageStamp.newest;
+      root.dataset.stampOpen = String(pageStamp.open);
+      root.dataset.stampPack = pageStamp.pack;
+    }
+    const openEl = document.getElementById("ops-open");
+    if (openEl) openEl.textContent = String(pageStamp.open);
+    if (stamp.next_check) {
+      const next = document.getElementById("ops-next");
+      const hint = document.getElementById("desk-hint");
+      if (next) next.textContent = stamp.next_check;
+      if (hint) hint.textContent = stamp.next_check;
+    }
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function renderEditorialCard(item) {
+    const status = item.status || (item.done ? "desk_posted" : "desk_queued");
+    const classes = ["editorial-item"];
+    if (item.is_new) classes.push("is-new");
+    if (item.done) classes.push("is-done");
+    if (status === "desk_skipped") classes.push("is-skipped");
+    const age = item.age ? ` · ${escapeHtml(item.age)}` : "";
+    const skipBtn =
+      status === "desk_skipped"
+        ? ""
+        : `<button type="button" class="btn-ghost btn-compact" data-editorial-skip="${escapeHtml(item.id)}">Пропустити</button>`;
+    const reason = item.skip_reason
+      ? `<p class="editorial-skip-reason">Пропуск: ${escapeHtml(item.skip_reason)}</p>`
+      : "";
+    const snip = item.snip
+      ? `<p class="editorial-snip">${escapeHtml(item.snip)}</p>`
+      : "";
+    return `<article class="${classes.join(" ")}" data-editorial-id="${escapeHtml(item.id)}" data-status="${escapeHtml(status)}" id="item-${escapeHtml(item.id)}">
+  <div class="editorial-meta">
+    <p class="editorial-label">${escapeHtml(item.label)}</p>
+    <span class="editorial-badge badge-${escapeHtml(item.badge_kind || "old")}">${escapeHtml(item.badge || "")}${age}</span>
+  </div>
+  ${snip}
+  <textarea readonly data-select data-editorial="${escapeHtml(item.id)}">${escapeHtml(item.text)}</textarea>
+  <div class="editorial-actions">
+    <button type="button" class="btn-secondary" data-copy-text="${escapeHtml(item.id)}">Копіювати</button>
+    ${skipBtn}
+    <label class="mark editorial-mark">
+      <input type="checkbox" data-editorial-done="${escapeHtml(item.id)}" ${item.done ? "checked" : ""}>
+      <span>Вже запостив</span>
+    </label>
+  </div>
+  ${reason}
+</article>`;
+  }
+
+  function paintEditorialLists(items) {
+    const byTab = { threads: [], telegram: [] };
+    (items || []).forEach((item) => {
+      const tab = item.tab === "telegram" ? "telegram" : "threads";
+      byTab[tab].push(item);
+    });
+    ["threads", "telegram"].forEach((tab) => {
+      const host = document.querySelector(`[data-editorial-list="${tab}"]`);
+      const panel = document.querySelector(`[data-panel="${tab}"]`);
+      if (!host) return;
+      const list = byTab[tab];
+      if (!list.length) {
+        host.innerHTML = `<div class="empty-panel"><p class="empty-title">Немає постів для ${tab === "threads" ? "Threads" : "Telegram"}</p><p class="empty-body">Оновиться автоматично після job.</p></div>`;
+        if (panel) panel.setAttribute("data-has-content", "0");
+        return;
+      }
+      const step =
+        tab === "threads"
+          ? `<p class="step">Threads · Копіювати → встав · познач «Вже запостив»</p>`
+          : `<p class="step">Telegram · Копіювати → встав у канал</p>`;
+      host.innerHTML = step + list.map(renderEditorialCard).join("");
+      if (panel) panel.setAttribute("data-has-content", "1");
+    });
+    refreshTabBadgesFromDom();
+  }
+
+  function refreshTabBadgesFromDom() {
+    ["threads", "telegram"].forEach((tab) => {
+      const n = document.querySelectorAll(
+        `[data-panel="${tab}"] .editorial-item[data-status="desk_queued"]`
+      ).length;
+      const tabBtn = document.querySelector(`[data-tab="${tab}"]`);
+      if (!tabBtn) return;
+      let badge = tabBtn.querySelector(".desk-tab-badge");
+      if (n > 0) {
+        if (!badge) {
+          badge = document.createElement("span");
+          badge.className = "desk-tab-badge";
+          tabBtn.appendChild(badge);
+        }
+        badge.textContent = String(n);
+        tabBtn.setAttribute("data-count", String(n));
+      } else if (badge) {
+        badge.remove();
+        tabBtn.removeAttribute("data-count");
+      }
+    });
+  }
+
+  async function softLoadEditorial() {
+    const res = await fetch("/api/desk/editorial?scope=today", {
+      credentials: "same-origin",
+    });
+    if (!res.ok) throw new Error("editorial");
+    const data = await res.json();
+    paintEditorialLists(data.items || []);
+    if (data.stamp) applyStampUi(data.stamp);
+    toast("Desk оновлено");
+  }
+
   async function checkStamp() {
     try {
       const res = await fetch("/api/desk/stamp", { credentials: "same-origin" });
       if (!res.ok) return;
       const stamp = await res.json();
-      const more = Number(stamp.editorial || 0) > pageStamp.editorial;
-      if (more) reloadDesk();
-      pageStamp.newest = stamp.newest || pageStamp.newest;
+      const packChanged =
+        Boolean(stamp.pack_updated_at) &&
+        stamp.pack_updated_at !== pageStamp.pack;
+      const editorialChanged =
+        stamp.newest !== pageStamp.newest ||
+        Number(stamp.editorial || 0) !== pageStamp.editorial ||
+        Number(stamp.open || 0) !== pageStamp.open;
+      if (packChanged) {
+        // Empty → first pack, or new short after previous one.
+        if (!pageStamp.pack) {
+          showUpdateBar("Short готовий — онови сторінку");
+        } else {
+          showUpdateBar("Новий Short готовий — онови сторінку");
+        }
+        return;
+      }
+      if (editorialChanged) {
+        try {
+          await softLoadEditorial();
+        } catch (err) {
+          showUpdateBar("Є нові тексти на desk");
+        }
+      } else {
+        applyStampUi(stamp);
+      }
     } catch (err) {
       /* ignore */
     }
   }
+
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") checkStamp();
   });
@@ -171,17 +340,6 @@
     }
   }
 
-  async function shareText(text) {
-    await copyText(text);
-    try {
-      if (navigator.share) {
-        await navigator.share({ text, title: pack.title || "Coin Wire" });
-      }
-    } catch (err) {
-      if (err && err.name === "AbortError") return;
-    }
-  }
-
   function captionFor(kind) {
     if (kind === "carousel") return pack.carousel_caption || "";
     if (kind === "tiktok") return pack.tiktok_caption || pack.ig_caption || "";
@@ -253,58 +411,108 @@
     dockBtn.dataset.kind = next;
   }
 
-  document.querySelectorAll("[data-copy]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const key = btn.getAttribute("data-copy");
+  function applyCardStatus(card, data) {
+    if (!card || !data) return;
+    const status = data.status || (data.done ? "desk_posted" : "desk_queued");
+    card.dataset.status = status;
+    card.classList.toggle("is-done", Boolean(data.done));
+    card.classList.toggle("is-new", Boolean(data.is_new));
+    card.classList.toggle("is-skipped", status === "desk_skipped");
+    const box = card.querySelector("[data-editorial-done]");
+    if (box) box.checked = Boolean(data.done);
+    const badge = card.querySelector(".editorial-badge");
+    if (badge) {
+      badge.className = `editorial-badge badge-${data.badge_kind || "old"}`;
+      const age = data.age ? ` · ${data.age}` : "";
+      badge.textContent = `${data.badge || ""}${age}`;
+    }
+    if (data.stamp) applyStampUi(data.stamp);
+    refreshTabBadgesFromDom();
+  }
+
+  // Event delegation — works after soft editorial refresh.
+  document.addEventListener("click", async (event) => {
+    const copyBtn = event.target.closest("[data-copy]");
+    if (copyBtn) {
+      const key = copyBtn.getAttribute("data-copy");
       const ok = await copyText(pack[key] || "");
-      if (ok) flashLabel(btn, "Скопійовано");
-    });
-  });
-  document.querySelectorAll("[data-copy-text]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const index = btn.getAttribute("data-copy-text");
+      if (ok) flashLabel(copyBtn, "Скопійовано");
+      return;
+    }
+    const copyTextBtn = event.target.closest("[data-copy-text]");
+    if (copyTextBtn) {
+      const index = copyTextBtn.getAttribute("data-copy-text");
       const box = document.querySelector(`[data-editorial="${CSS.escape(index)}"]`);
       const ok = await copyText(box ? box.value : "");
-      if (ok) flashLabel(btn, "Скопійовано");
-    });
-  });
-  document.querySelectorAll("[data-editorial-done]").forEach((box) => {
-    box.addEventListener("change", async () => {
-      const id = box.getAttribute("data-editorial-done");
-      const card = box.closest(".editorial-item");
+      if (ok) flashLabel(copyTextBtn, "Скопійовано");
+      return;
+    }
+    const skipBtn = event.target.closest("[data-editorial-skip]");
+    if (skipBtn) {
+      const id = skipBtn.getAttribute("data-editorial-skip");
+      const card = skipBtn.closest(".editorial-item");
       try {
-        const res = await fetch("/api/editorial/done", {
+        const res = await fetch("/api/editorial/skip", {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, done: box.checked }),
+          body: JSON.stringify({ id, reason: "operator" }),
         });
-        if (!res.ok) throw new Error("editorial mark");
+        if (!res.ok) throw new Error("skip");
         const data = await res.json();
-        if (card) {
-          card.classList.toggle("is-done", Boolean(data.done));
-          card.classList.toggle("is-new", Boolean(data.is_new));
-          const badge = card.querySelector(".editorial-badge");
-          if (badge) {
-            badge.className = `editorial-badge badge-${data.badge_kind || "old"}`;
-            const age = data.age ? ` · ${data.age}` : "";
-            badge.textContent = `${data.badge || ""}${age}`;
-          }
-          const list = card.parentElement;
-          if (list && data.done) {
-            list.appendChild(card);
-          } else if (list && !data.done) {
-            const firstDone = list.querySelector(".editorial-item.is-done");
-            if (firstDone && firstDone !== card) list.insertBefore(card, firstDone);
-          }
-        }
-        toast(box.checked ? "Позначено як запощено" : "Повернуто в чергу");
+        applyCardStatus(card, data);
+        const list = card && card.parentElement;
+        if (list && card) list.appendChild(card);
+        skipBtn.remove();
+        toast("Пропущено");
       } catch (err) {
-        box.checked = !box.checked;
-        toast("Не вдалось зберегти позначку", false);
+        toast("Не вдалось пропустити", false);
       }
-    });
+      return;
+    }
+    if (event.target.closest("[data-save-carousel]")) {
+      saveAllSlides(event.target.closest("[data-save-carousel]"));
+      return;
+    }
+    if (event.target.closest("[data-share-carousel]")) {
+      shareCarousel(event.target.closest("[data-share-carousel]"));
+      return;
+    }
+    const shareBtn = event.target.closest("[data-share]");
+    if (shareBtn) {
+      shareVideo(captionFor(shareBtn.getAttribute("data-share")), shareBtn);
+    }
   });
+
+  document.addEventListener("change", async (event) => {
+    const box = event.target.closest("[data-editorial-done]");
+    if (!box) return;
+    const id = box.getAttribute("data-editorial-done");
+    const card = box.closest(".editorial-item");
+    try {
+      const res = await fetch("/api/editorial/done", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, done: box.checked }),
+      });
+      if (!res.ok) throw new Error("editorial mark");
+      const data = await res.json();
+      applyCardStatus(card, data);
+      const list = card && card.parentElement;
+      if (list && data.done) {
+        list.appendChild(card);
+      } else if (list && !data.done) {
+        const firstDone = list.querySelector(".editorial-item.is-done, .editorial-item.is-skipped");
+        if (firstDone && firstDone !== card) list.insertBefore(card, firstDone);
+      }
+      toast(box.checked ? "Позначено як запощено" : "Повернуто в чергу");
+    } catch (err) {
+      box.checked = !box.checked;
+      toast("Не вдалось зберегти позначку", false);
+    }
+  });
+
   async function saveAllSlides(btn) {
     if (btn) {
       btn.disabled = true;
@@ -337,18 +545,6 @@
     }
   }
 
-  document.querySelectorAll("[data-save-carousel]").forEach((btn) => {
-    btn.addEventListener("click", () => saveAllSlides(btn));
-  });
-  document.querySelectorAll("[data-share-carousel]").forEach((btn) => {
-    btn.addEventListener("click", () => shareCarousel(btn));
-  });
-  document.querySelectorAll("[data-share]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const kind = btn.getAttribute("data-share");
-      shareVideo(captionFor(kind), btn);
-    });
-  });
   if (dockBtn) {
     dockBtn.addEventListener("click", () => {
       const kind = dockBtn.dataset.kind;
@@ -356,9 +552,13 @@
       shareVideo(captionFor(kind), dockBtn);
     });
   }
-  document.querySelectorAll("textarea[data-select]").forEach((box) => {
-    box.addEventListener("focus", () => box.select());
-    box.addEventListener("click", () => box.select());
+  document.addEventListener("focusin", (event) => {
+    const box = event.target.closest("textarea[data-select]");
+    if (box) box.select();
+  });
+  document.addEventListener("click", (event) => {
+    const box = event.target.closest("textarea[data-select]");
+    if (box) box.select();
   });
   function adjustTabBadge(tabId, delta) {
     const tab = document.querySelector(`[data-tab="${tabId}"]`);
@@ -441,7 +641,10 @@
 
     function show(tabId) {
       tabs.forEach((tab) => {
-        tab.classList.toggle("is-active", tab.getAttribute("data-tab") === tabId);
+        const on = tab.getAttribute("data-tab") === tabId;
+        tab.classList.toggle("is-active", on);
+        tab.setAttribute("aria-selected", on ? "true" : "false");
+        tab.tabIndex = on ? 0 : -1;
       });
       panels.forEach((panel) => {
         panel.hidden = !panelVisible(tabId, panel);
@@ -463,6 +666,24 @@
     tabs.forEach((tab) => {
       tab.addEventListener("click", () => show(tab.getAttribute("data-tab")));
     });
+
+    const tablist = document.getElementById("desk-tabs");
+    if (tablist) {
+      tablist.addEventListener("keydown", (event) => {
+        const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+        if (!keys.includes(event.key)) return;
+        event.preventDefault();
+        const ids = tabs.map((t) => t.getAttribute("data-tab"));
+        const current = tabs.findIndex((t) => t.classList.contains("is-active"));
+        let next = current;
+        if (event.key === "ArrowRight") next = (current + 1) % tabs.length;
+        if (event.key === "ArrowLeft") next = (current - 1 + tabs.length) % tabs.length;
+        if (event.key === "Home") next = 0;
+        if (event.key === "End") next = tabs.length - 1;
+        show(ids[next]);
+        tabs[next].focus();
+      });
+    }
 
     const params = new URLSearchParams(window.location.search);
     let initial = params.get("tab") || "";
@@ -501,8 +722,17 @@
   }
 
   function isIos() {
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    return (
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+    );
+  }
+
+  function collapsePushCard(on) {
+    const card = document.getElementById("push-card");
+    if (!card) return;
+    card.classList.toggle("is-collapsed", on);
+    card.hidden = on;
   }
 
   async function setupPush() {
@@ -510,7 +740,18 @@
     const hint = document.getElementById("push-hint");
     const statusText = document.getElementById("push-status-text");
     const card = document.getElementById("push-card");
+    const dot = document.getElementById("push-dot");
     if (!btn) return;
+
+    if (dot) {
+      dot.addEventListener("click", () => {
+        if (card) {
+          card.hidden = false;
+          card.classList.remove("is-collapsed");
+          card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      });
+    }
 
     const serverReady = !btn.disabled;
     const supportsPush =
@@ -601,21 +842,21 @@
           btn.textContent = "Надіслати тест";
           btn.dataset.mode = "test";
           if (card) card.classList.add("is-on");
-          const dot = document.getElementById("push-dot");
           if (dot) {
             dot.hidden = false;
             dot.classList.add("is-on");
-            dot.title = "Push: активний";
+            dot.title = "Push: активний (тап = показати картку)";
           }
+          collapsePushCard(true);
           if (statusText) {
             statusText.textContent =
               `Увімкнено (standalone=${isStandalone}). Тест: спочатку local, потім server.`;
           }
         } else {
+          collapsePushCard(false);
           btn.textContent = "Увімкнути сповіщення";
           btn.dataset.mode = "subscribe";
           if (card) card.classList.remove("is-on");
-          const dot = document.getElementById("push-dot");
           if (dot) {
             dot.hidden = false;
             dot.classList.remove("is-on");
@@ -717,4 +958,3 @@
   setupTabs();
   setupPush();
 })();
-

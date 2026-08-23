@@ -84,6 +84,38 @@ def add_pending_upload(
     return entry
 
 
+def pending_queue_snapshot() -> dict[str, Any]:
+    """Why 'Nothing due' can happen with a non-empty queue."""
+    from collections import Counter
+
+    pending = load_pending()
+    by_status = Counter(str(e.get("status") or "unknown") for e in pending)
+    now = datetime.now(timezone.utc)
+    scheduled = [e for e in pending if e.get("status") == "scheduled"]
+    future = 0
+    for entry in scheduled:
+        raw = entry.get("publish_at")
+        if not raw:
+            continue
+        try:
+            target = datetime.fromisoformat(str(raw))
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=timezone.utc)
+            if target > now:
+                future += 1
+        except (TypeError, ValueError):
+            pass
+    enabled = auto_publish_enabled()
+    return {
+        "enabled": enabled,
+        "total": len(pending),
+        "by_status": dict(by_status),
+        "scheduled": len(scheduled),
+        "scheduled_future": future,
+        "due_now": len(due_for_publish(now)),
+    }
+
+
 def mark_published(video_id: str) -> None:
     pending = load_pending()
     for entry in pending:
