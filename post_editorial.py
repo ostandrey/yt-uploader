@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.content.editorial_jobs import (
     post_market_snapshot,
+    post_numbers_that_matter,
     post_telegram_poll,
     post_threads_recap,
     post_weekly_digest,
@@ -32,11 +33,20 @@ def main() -> None:
     parser.add_argument("--weekly-digest", action="store_true")
     parser.add_argument("--threads-recap", action="store_true")
     parser.add_argument("--market-snapshot", action="store_true")
+    parser.add_argument("--numbers", action="store_true")
     parser.add_argument("--poll", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    if not (args.weekly_digest or args.threads_recap or args.poll or args.market_snapshot):
-        parser.error("pick --weekly-digest, --threads-recap, --market-snapshot, or --poll")
+    if not (
+        args.weekly_digest
+        or args.threads_recap
+        or args.poll
+        or args.market_snapshot
+        or args.numbers
+    ):
+        parser.error(
+            "pick --weekly-digest, --threads-recap, --market-snapshot, --numbers, or --poll"
+        )
 
     load_dotenv(ROOT / ".env")
     config = _load_config()
@@ -50,6 +60,9 @@ def main() -> None:
         print(result)
     if args.market_snapshot:
         result = post_market_snapshot(publisher, config, dry_run=args.dry_run)
+        print(result)
+    if args.numbers:
+        result = post_numbers_that_matter(publisher, config, dry_run=args.dry_run)
         print(result)
     if args.poll:
         result = post_telegram_poll(publisher, config, dry_run=args.dry_run)

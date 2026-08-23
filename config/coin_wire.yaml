@@ -99,6 +99,10 @@ publishing:
     threads_recap: true
     threads_reflection: true
     market_snapshot: true
+    numbers_that_matter: true
+    numbers_per_week: 3
+    numbers_min_pct: 2.0
+    numbers_lookback_days: 7
     story_quote_per_week: 3
 
 # Local B-roll auto-fill (Pexels/Pixabay → folders → ffprobe + YOLO marks rejects)
@@ -133,3 +137,4 @@ automation:
     threads_recap: "18:10"                 # Fri — 10m after evening Short to avoid CPU clash
     telegram_poll_times: ["12:00"]         # Wed + Fri polls
     market_snapshot: "08:00"               # daily English price list
+    numbers_that_matter: "12:30"           # Tue/Thu — 7-day price contrast (desk)

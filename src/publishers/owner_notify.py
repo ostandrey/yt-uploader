@@ -24,6 +24,7 @@ EDITORIAL_KIND = {
     "recap": ("Threads", "weekly recap"),
     "reflection": ("Threads", "weekly reflection"),
     "snapshot": ("Threads", "market snapshot"),
+    "numbers": ("Threads", "numbers that matter"),
     "poll": ("TG", "poll"),
     "digest": ("TG", "digest"),
 }
@@ -35,6 +36,7 @@ KIND_TAB = {
     "recap": "threads",
     "reflection": "threads",
     "snapshot": "threads",
+    "numbers": "threads",
     "context": "telegram",
     "poll": "telegram",
     "digest": "telegram",

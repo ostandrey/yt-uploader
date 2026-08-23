@@ -418,7 +418,7 @@ def _enrich_editorial(item: dict[str, Any], now: datetime) -> dict[str, Any]:
     age_hours = _age_hours(created_at, now)
     is_new = (status != DESK_POSTED and status != DESK_SKIPPED) and age_hours is not None and age_hours < 8
     kind = str(item.get("kind") or "note")
-    if kind in {"opinion", "question", "recap", "reflection", "snapshot", "news"}:
+    if kind in {"opinion", "question", "recap", "reflection", "snapshot", "news", "numbers"}:
         tab = "threads"
     elif kind in {"context", "poll", "digest"}:
         tab = "telegram"
@@ -571,7 +571,7 @@ def empty_panel_copy(panel: str, *, next_check: str = "", has_pack: bool = False
         return {
             "title": "Немає постів для Threads",
             "body": (
-                "News / snapshot / reflection з’являться після job. "
+                "News / snapshot / numbers / reflection з’являться після job. "
                 f"Відкриті з учора лишаються тут до 36 год. {check}"
             ),
         }
@@ -862,7 +862,7 @@ def desk_tabs(pack: dict | None, editorial: list[dict[str, Any]]) -> list[dict[s
     """Tab strip: unpublished counts (open work), not only НОВЕ."""
     from src.desk.items import DESK_QUEUED, normalize_status
 
-    threads_kinds = {"opinion", "question", "recap", "reflection", "snapshot", "news"}
+    threads_kinds = {"opinion", "question", "recap", "reflection", "snapshot", "news", "numbers"}
     telegram_kinds = {"context", "poll", "digest"}
     threads_new = sum(
         1

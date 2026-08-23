@@ -13,6 +13,8 @@ from src.content import editorial_copy
 from src.content.editorial_log import append_event, events_since, format_events_list, load_log
 from src.content.market_ticker import fetch_market_quotes, format_market_snapshot
 from src.content.news_filter import build_market_takeaway
+from src.content.price_history import format_numbers_that_matter, record_quotes
+from src.content import price_history as ph
 from src.content.story_dedupe import titles_similar
 from src.desk.catalog import _raw_editorial_items, write_editorial_items
 from src.publishers.telegram_publisher import TelegramPublisher
@@ -63,6 +65,8 @@ def _load_state(tz_name: str, path: Optional[Path] = None) -> dict[str, Any]:
         "recap": 0,
         "reflection": 0,
         "snapshot_day": "",
+        "numbers": 0,
+        "numbers_day": "",
         "story_quote": 0,
     }
 
@@ -239,6 +243,7 @@ def post_market_snapshot(
         return {"posted": False, "reason": "no_quotes"}
     if dry_run:
         return {"posted": False, "dry_run": True, "text": text}
+    record_quotes(quotes, today)
     try:
         publisher.post_to_channel(text)
     except Exception as exc:
@@ -264,6 +269,86 @@ def post_market_snapshot(
     except Exception as exc:
         print(f"Snapshot owner notify failed: {exc}")
     return {"posted": True, "text": text}
+
+
+def post_numbers_that_matter(
+    publisher: TelegramPublisher,
+    config: dict,
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """
+    Rules-based 7-day price contrast for Threads desk.
+    Zero LLM. Skip when moves are flat or archive is thin.
+    Does not post to Telegram channel (daily snapshot already covers the print).
+    """
+    tz_name = _tz(config)
+    editorial = _editorial_cfg(config)
+    if not editorial.get("numbers_that_matter", True):
+        return {"posted": False, "reason": "disabled"}
+    today = datetime.now(ZoneInfo(tz_name)).strftime("%Y-%m-%d")
+    state = _load_state(tz_name)
+    if state.get("numbers_day") == today:
+        return {"posted": False, "reason": "already_today"}
+    cap = int(editorial.get("numbers_per_week", 3) or 3)
+    if int(state.get("numbers", 0)) >= cap:
+        return {"posted": False, "reason": "week_cap"}
+
+    quotes = fetch_market_quotes(snapshot=True)
+    if not quotes:
+        return {"posted": False, "reason": "no_quotes"}
+    if not dry_run:
+        record_quotes(quotes, today)
+
+    min_pct = float(editorial.get("numbers_min_pct", 2.0) or 2.0)
+    lookback = int(editorial.get("numbers_lookback_days", 7) or 7)
+
+    history = ph.load_history()
+    if dry_run:
+        # Preview with today's live prints without writing yet
+        row = {q.symbol.upper(): float(q.price_usd) for q in quotes}
+        history = dict(history)
+        history[today] = row
+    built = format_numbers_that_matter(
+        today=today,
+        history=history,
+        lookback_days=lookback,
+        min_abs_pct=min_pct,
+    )
+    text = str(built.get("text") or "").strip()
+    if not text:
+        return {
+            "posted": False,
+            "reason": str(built.get("reason") or "skip"),
+            "compare_day": built.get("compare_day") or "",
+        }
+    if dry_run:
+        return {
+            "posted": False,
+            "dry_run": True,
+            "text": text,
+            "compare_day": built.get("compare_day") or "",
+        }
+
+    state["numbers"] = int(state.get("numbers", 0)) + 1
+    state["numbers_day"] = today
+    _save_state(state)
+    _push_desk_item("numbers", "Threads — numbers", text)
+    append_event(kind="numbers", title="Numbers that matter")
+    try:
+        from src.publishers.owner_notify import format_desk_editorial_ready, notify_owner_status
+
+        notify_owner_status(
+            publisher,
+            [format_desk_editorial_ready(kind="numbers", title="Numbers that matter")],
+        )
+    except Exception as exc:
+        print(f"Numbers owner notify failed: {exc}")
+    return {
+        "posted": True,
+        "text": text,
+        "compare_day": built.get("compare_day") or "",
+    }
 
 
 def post_threads_reflection(

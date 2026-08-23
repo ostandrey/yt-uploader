@@ -1,6 +1,5 @@
 """Threads news pulse — copy variants + desk-only queue."""
 
-from src.content.news_filter import extract_key_bullets
 from src.content.threads_pulse import (
     build_threads_news_pulse,
     pick_pulse_variant,
@@ -111,17 +110,31 @@ def test_desk_only_not_overridden_by_auto_publish():
     assert cfg.desk_only is True
 
 
-def test_pulse_does_not_reuse_telegram_bullets():
+def test_pulse_states_a_concrete_fact():
     article = {
-        "title": "CFTC to Meet on Crypto Regulations on Aug. 20",
+        "title": "Fed officials signal September rate path remains data-dependent",
         "summary": (
-            "The CFTC will hold a meeting for its Innovation Advisory Committee "
-            "on Aug. 20 to address regulation related to crypto assets, artificial "
-            "intelligence, and prediction markets."
+            "Several Federal Reserve officials said markets should wait for the next "
+            "employment report before pricing a September cut."
         ),
-        "hash": "cftc1",
+        "hash": "fed-thin-1",
     }
-    text, _ = build_threads_news_pulse(article, tier="strong", seed="cftc1")
-    bullets = extract_key_bullets(article, max_bullets=3)
-    for bullet in bullets:
-        assert bullet not in text
+    text, _ = build_threads_news_pulse(article, tier="strong", seed="fed-thin-1")
+    assert text
+    low = text.lower()
+    assert "name on the docket" not in low
+    assert "next official document is the thing to wait for" not in low
+    # Must carry story substance, not philosophy alone.
+    assert "fed" in low or "federal reserve" in low
+    assert "september" in low or "employment" in low or "rate" in low
+    assert len(text.split()) >= 12
+
+
+def test_pulse_does_not_ship_philosophy_only():
+    article = {
+        "title": "Fed",
+        "summary": "Fed.",
+        "hash": "empty-1",
+    }
+    text, _ = build_threads_news_pulse(article, tier="strong", seed="empty-1")
+    assert text == ""

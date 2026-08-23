@@ -2,7 +2,7 @@
 Diversified Threads news flash (standalone text, not a Short caption).
 
 No engagement questions. Hashtags only for regulatory stories (one tag).
-Must not reuse Telegram headline/bullet wording.
+Must not reuse Telegram headline/bullet wording — but MUST still state a fact.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ PulseVariant = Literal[
 ]
 
 MAX_LEN = 500
+MIN_FACT_WORDS = 8
 
 TIER_RANK = {"standard": 1, "strong": 2, "insight": 3, "breaking": 4}
 REG_HINTS = ("sec", "cftc", "etf", "regulat", "fed ", "federal reserve", "fomc")
@@ -41,6 +42,15 @@ _MONEY = re.compile(
     r"|\d+(?:\.\d+)?\s?%",
     re.I,
 )
+_PHILOSOPHY = {
+    "the headline is not the filing",
+    "the next official document is the thing to wait for",
+    "wait for the primary document",
+    "treat the headline as a calendar marker",
+    "the calendar mark is the story",
+    "the docket matters more than the headline",
+    "is the name on the docket",
+}
 
 
 def tier_meets_minimum(tier: str, minimum: str) -> bool:
@@ -96,50 +106,92 @@ def _tg_banned(article: Dict, title: str, bullets: List[str], first_line: str) -
     return [item for item in banned if item and len(item) > 12]
 
 
-def _angle_opener(title: str, summary: str) -> str:
-    """Lead with date / print / name — not the Telegram headline."""
+def _finish(line: str) -> str:
+    line = naturalize_text(line or "").strip()
+    if not line:
+        return ""
+    if not line.endswith((".", "?", "!")):
+        line += "."
+    return line
+
+
+def _concrete_fact(title: str, summary: str, bullets: List[str]) -> str:
+    """One readable fact the reader can understand without the original article."""
+    candidates: List[str] = []
+    for sent in split_sentences(summary):
+        candidates.append(sent)
+    if title:
+        candidates.append(title)
+    candidates.extend(bullets)
+    for raw in candidates:
+        line = _finish(raw)
+        words = line.split()
+        if len(words) < MIN_FACT_WORDS:
+            continue
+        # Skip pure philosophy if it somehow appears in source.
+        low = line.lower()
+        if any(p in low for p in _PHILOSOPHY):
+            continue
+        if len(words) > 28:
+            line = _finish(" ".join(words[:28]))
+        return line
+    # Last resort: title even if short — still better than empty philosophy.
+    if title and len(title.split()) >= 4:
+        return _finish(title)
+    return ""
+
+
+def _angle_color(title: str, summary: str, fact: str) -> str:
+    """Optional second line — never ships alone without a fact."""
     blob = f"{title}. {summary}"
     dated = _DATE.search(blob)
     if dated:
-        return f"{dated.group(0).strip()} is the date to watch, not today's headline."
+        return _finish(f"{dated.group(0).strip()} is on the calendar — wait for the primary print")
     money = _MONEY.search(blob)
     if money:
-        return f"{money.group(0).strip()} is the print. It is not a forecast."
+        return _finish(f"{money.group(0).strip()} is the figure in the story, not a forecast")
     agency = _AGENCY.search(blob)
-    if agency:
+    if agency and fact:
         name = agency.group(0)
         if name.lower() in {"the fed", "fed"}:
             name = "Fed"
-        return f"{name} is the name on the docket. The headline is not the filing."
+        return _finish(f"{name} is named — treat the headline as a marker until the document is public")
     return ""
 
 
 def _distinct_line(candidates: List[str], banned: list[str]) -> str:
     for raw in candidates:
-        line = naturalize_text(raw or "").strip()
-        if len(line) < 24:
+        line = _finish(raw)
+        if len(line.split()) < MIN_FACT_WORDS:
             continue
-        if not line.endswith("."):
-            line += "."
+        if any(p in line.lower() for p in _PHILOSOPHY):
+            continue
         if not shares_lead(line, banned):
             return line
     return ""
 
 
-def _body_line(title: str, summary: str, bullets: List[str], banned: list[str]) -> str:
+def _body_line(title: str, summary: str, bullets: List[str], banned: list[str], fact: str) -> str:
     leftover = split_sentences(summary)
     if leftover:
         leftover = leftover[1:] + leftover[:1]
-    extras = [
-        *leftover,
-        *[b for b in bullets],
-        "The next official document is the thing to wait for.",
-        "Treat the headline as a calendar marker until the docket is public.",
-    ]
-    line = _distinct_line(extras, banned + [title])
-    if line:
+    extras = [*leftover, *[b for b in bullets]]
+    line = _distinct_line(extras, banned + [title, fact])
+    if line and line.lower() != fact.lower():
         return line
-    return "Wait for the primary document before calling a shift in the tape."
+    return _angle_color(title, summary, fact)
+
+
+def _has_substance(text: str, fact: str) -> bool:
+    if not fact or len(fact.split()) < 4:
+        return False
+    body = text.lower()
+    # Must include some non-philosophy content from the fact.
+    fact_tokens = [w for w in re.findall(r"[a-z0-9]+", fact.lower()) if len(w) > 3]
+    if not fact_tokens:
+        return False
+    hits = sum(1 for w in fact_tokens[:8] if w in body)
+    return hits >= min(3, len(fact_tokens))
 
 
 def build_threads_news_pulse(
@@ -151,7 +203,7 @@ def build_threads_news_pulse(
 ) -> tuple[str, PulseVariant]:
     """
     Build a plain-text Threads news flash (no video, no YouTube CTA).
-    question_rate is ignored — questions are a separate editorial type.
+    Always leads with a concrete story fact — never philosophy-only.
     """
     del question_rate
     seed = seed or article.get("hash") or article.get("title", "")
@@ -163,36 +215,62 @@ def build_threads_news_pulse(
     if first_line and not first_line.endswith("."):
         first_line += "."
     banned = _tg_banned(article, title, bullets, first_line)
-    opener = _angle_opener(title, summary)
-    body = _body_line(title, summary, bullets, banned)
+    fact = _concrete_fact(title, summary, bullets)
+    if not fact:
+        return "", variant
+
+    body = _body_line(title, summary, bullets, banned, fact)
+    color = _angle_color(title, summary, fact)
     takeaway = build_market_takeaway(article)
 
     lines: List[str] = []
 
     if variant == "breaking_lead":
-        lines.append(opener or "Just in: the docket matters more than the headline.")
-        lines.append(body)
+        lines.append(fact)
+        lines.append(body or color)
     elif variant == "prose":
-        lines.append(opener or body)
-        if opener:
+        lines.append(fact)
+        if body and body.lower() != fact.lower():
             lines.append(body)
+        elif color:
+            lines.append(color)
     elif variant == "takeaway":
-        lines.append(opener or title)
-        extra = takeaway if takeaway and not shares_lead(takeaway, banned) else body
-        lines.append(extra)
+        lines.append(fact)
+        extra = takeaway if takeaway and not shares_lead(takeaway, banned) else (body or color)
+        if extra and extra.lower() != fact.lower():
+            lines.append(extra)
     elif variant == "context":
-        lines.append(opener or "The calendar mark is the story, not the headline.")
-        lines.append(body)
+        lines.append(fact)
+        lines.append(body or color)
     elif variant == "minimal":
-        lines.append(opener or body)
+        lines.append(fact)
+        if color:
+            lines.append(color)
     else:
-        lines.append(opener or body)
+        lines.append(fact)
+        if body and body.lower() != fact.lower():
+            lines.append(body)
 
-    text = "\n\n".join(line for line in lines if line)
-    if shares_lead(text, banned):
-        text = "\n\n".join(
-            line for line in (opener, "Wait for the primary document, not the headline.") if line
-        )
+    # Drop empties / dupes while keeping order.
+    seen: set[str] = set()
+    clean: List[str] = []
+    for line in lines:
+        key = (line or "").strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        clean.append(line.strip())
+
+    text = "\n\n".join(clean)
+    if shares_lead(text, banned) or not _has_substance(text, fact):
+        # Soft rewrite: keep the fact, add one cautious color line if regulatory.
+        text = fact
+        if color and color.lower() != fact.lower():
+            text = f"{fact}\n\n{color}"
+
+    if not _has_substance(text, fact):
+        return "", variant
+
     if _is_regulatory(article):
         tag = _regulatory_tag(article)
         if tag:

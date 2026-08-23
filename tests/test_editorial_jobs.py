@@ -1,4 +1,4 @@
-"""Editorial jobs: reflection selection, caps, market snapshot."""
+"""Editorial jobs: reflection selection, caps, market snapshot, numbers."""
 
 from __future__ import annotations
 
@@ -7,10 +7,12 @@ from datetime import datetime, timezone
 from src.content.editorial_jobs import (
     pick_reflection_pair,
     post_market_snapshot,
+    post_numbers_that_matter,
     post_threads_recap,
     post_threads_reflection,
 )
 from src.content.market_ticker import MarketQuote
+from src.content.price_history import record_quotes
 
 
 def test_pick_reflection_pair_flow_vs_regulatory():
@@ -141,3 +143,96 @@ def test_snapshot_formats_without_llm(tmp_path, monkeypatch):
     assert "Bitcoin $64,061" in result["text"]
     assert "CoinGecko" in result["text"]
     assert "📊" not in result["text"]
+
+
+def _numbers_config(**extra):
+    cfg = _config()
+    cfg["publishing"]["editorial"].update(
+        {
+            "numbers_that_matter": True,
+            "numbers_per_week": 3,
+            "numbers_min_pct": 2.0,
+            "numbers_lookback_days": 7,
+        }
+    )
+    cfg["publishing"]["editorial"].update(extra)
+    return cfg
+
+
+def test_numbers_skips_below_threshold(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "src.content.editorial_jobs.STATE_FILE", tmp_path / "state.json"
+    )
+    hist = tmp_path / "price_history.json"
+    monkeypatch.setattr("src.content.price_history.HISTORY_FILE", hist)
+    monkeypatch.setattr(
+        "src.content.editorial_jobs.fetch_market_quotes",
+        lambda snapshot=False: [
+            MarketQuote("BTC", 101000, 0.5),
+            MarketQuote("ETH", 3050, 0.5),
+        ],
+    )
+    from datetime import date as date_cls, timedelta, timezone as tz
+
+    today = datetime.now(tz.utc).strftime("%Y-%m-%d")
+    week_ago = (date_cls.fromisoformat(today) - timedelta(days=7)).isoformat()
+    record_quotes(
+        [MarketQuote("BTC", 100000), MarketQuote("ETH", 3000)],
+        week_ago,
+        path=hist,
+    )
+    result = post_numbers_that_matter(
+        type("P", (), {})(), _numbers_config(), dry_run=True
+    )
+    assert result["posted"] is False
+    assert result["reason"] == "below_threshold"
+
+
+def test_numbers_formats_contrast(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "src.content.editorial_jobs.STATE_FILE", tmp_path / "state.json"
+    )
+    hist = tmp_path / "price_history.json"
+    monkeypatch.setattr("src.content.price_history.HISTORY_FILE", hist)
+    monkeypatch.setattr(
+        "src.content.editorial_jobs.fetch_market_quotes",
+        lambda snapshot=False: [
+            MarketQuote("BTC", 110000, 1.0),
+            MarketQuote("ETH", 2800, -1.0),
+        ],
+    )
+    from datetime import date as date_cls, timedelta, timezone as tz
+
+    today = datetime.now(tz.utc).strftime("%Y-%m-%d")
+    week_ago = (date_cls.fromisoformat(today) - timedelta(days=7)).isoformat()
+    record_quotes(
+        [MarketQuote("BTC", 100000), MarketQuote("ETH", 3000)],
+        week_ago,
+        path=hist,
+    )
+    result = post_numbers_that_matter(
+        type("P", (), {})(), _numbers_config(), dry_run=True
+    )
+    assert result["dry_run"] is True
+    assert "BTC $110,000 vs $100,000" in result["text"]
+    assert "+10.0% over 7 days." in result["text"]
+    assert "#bitcoin" in result["text"]
+
+
+def test_numbers_week_cap(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "src.content.editorial_jobs.STATE_FILE", tmp_path / "state.json"
+    )
+    from src.content.editorial_jobs import _save_state
+
+    _save_state(
+        {"week": "2099-W01", "numbers": 3, "numbers_day": ""},
+        tmp_path / "state.json",
+    )
+    monkeypatch.setattr(
+        "src.content.editorial_jobs._week_key", lambda tz: "2099-W01"
+    )
+    result = post_numbers_that_matter(
+        type("P", (), {})(), _numbers_config(), dry_run=True
+    )
+    assert result["reason"] == "week_cap"

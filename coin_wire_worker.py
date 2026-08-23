@@ -209,6 +209,10 @@ def job_market_snapshot() -> None:
     _run_script("post_editorial.py", "--market-snapshot")
 
 
+def job_numbers_that_matter() -> None:
+    _run_script("post_editorial.py", "--numbers")
+
+
 def job_telegram_poll() -> None:
     _run_script("post_editorial.py", "--poll")
 
@@ -495,6 +499,22 @@ def main() -> None:
             misfire_grace_time=7200,
         )
         log.info("Market snapshot: daily %s", snapshot_time)
+    numbers_time = schedule_cfg.get("numbers_that_matter", "12:30")
+    if editorial_cfg.get("numbers_that_matter", True):
+        hour, minute = _parse_hhmm(numbers_time)
+        scheduler.add_job(
+            job_numbers_that_matter,
+            CronTrigger(
+                day_of_week="tue,thu",
+                hour=hour,
+                minute=minute,
+                timezone=timezone,
+            ),
+            id="numbers_that_matter",
+            replace_existing=True,
+            misfire_grace_time=7200,
+        )
+        log.info("Numbers that matter: Tue/Thu %s", numbers_time)
     if int(editorial_cfg.get("poll_per_week", 0) or 0) > 0:
         for index, time_str in enumerate(poll_times):
             hour, minute = _parse_hhmm(time_str)
