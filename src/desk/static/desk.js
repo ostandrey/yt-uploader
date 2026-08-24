@@ -104,19 +104,24 @@
     const snip = item.snip
       ? `<p class="editorial-snip">${escapeHtml(item.snip)}</p>`
       : "";
-    const kind = item.kind
-      ? `<span class="editorial-kind">${escapeHtml(item.kind)}</span>`
+    const kindText = escapeHtml(item.kind_label || item.kind || "");
+    const kind = kindText
+      ? `<span class="editorial-kind">${kindText}</span>`
       : "";
+    const label =
+      item.label && !item.done
+        ? `<p class="editorial-label">${escapeHtml(item.label)}</p>`
+        : "";
     return `<article class="${classes.join(" ")}" data-editorial-id="${escapeHtml(item.id)}" data-status="${escapeHtml(status)}" id="item-${escapeHtml(item.id)}">
-  ${kind}
-  <div class="editorial-meta">
-    <p class="editorial-label">${escapeHtml(item.label)}</p>
+  <div class="editorial-top">
+    ${kind}
     <span class="editorial-badge badge-${escapeHtml(item.badge_kind || "old")}">${escapeHtml(item.badge || "")}${age}</span>
   </div>
+  ${label}
   ${snip}
   <textarea readonly data-select data-editorial="${escapeHtml(item.id)}">${escapeHtml(item.text)}</textarea>
   <div class="editorial-actions">
-    <button type="button" class="btn-secondary" data-copy-text="${escapeHtml(item.id)}">Копіювати</button>
+    <button type="button" class="btn-primary" data-copy-text="${escapeHtml(item.id)}">Копіювати</button>
     ${skipBtn}
     <label class="mark editorial-mark">
       <input type="checkbox" data-editorial-done="${escapeHtml(item.id)}" ${item.done ? "checked" : ""}>
@@ -159,10 +164,13 @@
         if (panel) panel.setAttribute("data-has-content", "0");
         return;
       }
+      const openCount = list.filter((item) => !item.done).length;
       const step =
-        tab === "threads"
-          ? `<p class="step">Threads · Копіювати → встав · познач «Вже запостив»</p>`
-          : `<p class="step">Telegram · Копіювати → встав у канал</p>`;
+        openCount === 0
+          ? ""
+          : tab === "threads"
+            ? `<p class="step">Threads · Копіювати → встав · познач «Вже запостив»</p>`
+            : `<p class="step">Telegram · Копіювати → встав у канал</p>`;
       host.innerHTML = step + list.map(renderEditorialCard).join("");
       if (panel) panel.setAttribute("data-has-content", "1");
     });
@@ -863,7 +871,7 @@
           if (dot) {
             dot.hidden = false;
             dot.classList.add("is-on");
-            dot.title = "Push: активний (тап = показати картку)";
+            dot.title = "Push: активний (тап = показати)";
           }
           collapsePushCard(true);
           if (statusText) {
@@ -875,14 +883,14 @@
           btn.dataset.mode = "subscribe";
           if (card) card.classList.remove("is-on");
           if (dot) {
-            dot.hidden = false;
+            dot.hidden = true;
             dot.classList.remove("is-on");
-            dot.title = "Push: вимкнений";
+            dot.title = "Push";
           }
           if (statusText) {
             statusText.textContent = isIos() && !isStandalone
               ? "iPhone: спочатку ярлик Home Screen, потім Увімкнути."
-              : "Один раз «Увімкнути». Далі desk оновлює підписку сам.";
+              : "Push: один раз «Увімкнути» — далі desk сам.";
           }
         }
       } catch (err) {

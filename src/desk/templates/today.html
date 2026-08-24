@@ -13,10 +13,10 @@
     <span class="brand">Coin Wire <i class="push-dot" id="push-dot" title="Push" hidden></i></span>
     <div class="header-actions">
       <button type="button" class="btn-ghost btn-compact" id="refresh-btn" title="Оновити">Оновити</button>
-      <a class="btn-ghost btn-compact" href="/history">Історія{% if history_count %} {{ history_count }}{% endif %}</a>
-      <a class="btn-ghost btn-compact" href="/stats">Статистика</a>
+      <a class="btn-ghost btn-compact" href="/history" title="Історія">Історія{% if history_count %} {{ history_count }}{% endif %}</a>
+      <a class="btn-ghost btn-compact" href="/stats" title="Статистика">Статистика</a>
       <form method="post" action="/logout">
-        <button class="btn-ghost btn-compact" type="submit">Вийти</button>
+        <button class="btn-ghost btn-compact" type="submit" title="Вийти">Вийти</button>
       </form>
     </div>
   </header>
@@ -28,11 +28,12 @@
     Токени YouTube лишай на окремому <code>/app/tokens</code>.
   </div>
   {% endif %}
-  {% if overdue_today %}
-  <p class="warn-inline" id="overdue-line">{{ overdue_today }}</p>
-  {% endif %}
 
   <div class="ops-strip" id="ops-strip" aria-live="polite">
+    {% if overdue_today %}
+    <span class="ops-warn" id="overdue-line">{{ overdue_today }}</span>
+    <span class="ops-sep">·</span>
+    {% endif %}
     <span>Відкрито: <b id="ops-open">{{ stamp.open }}</b></span>
     <span class="ops-sep">·</span>
     <span id="ops-next">{{ next_check }}</span>
@@ -43,18 +44,15 @@
     <button type="button" class="btn-primary btn-compact" id="desk-update-btn">Оновити</button>
   </div>
 
-  <section class="push-card card" id="push-card">
-    <div class="push-card-copy">
-      <h2>Сповіщення</h2>
-      <p id="push-status-text">
-        {% if push_enabled %}
-        Один раз «Увімкнути». Далі desk оновлює підписку сам.
-        {% else %}
-        Push на сервері ще не готовий.
-        {% endif %}
-      </p>
-    </div>
-    <button type="button" class="btn-primary" id="push-btn" {% if not push_enabled %}disabled{% endif %}>
+  <section class="push-strip" id="push-card" {% if not push_enabled %}data-unavailable="1"{% endif %}>
+    <p id="push-status-text" class="push-strip-text">
+      {% if push_enabled %}
+      Push: один раз «Увімкнути» — далі desk сам.
+      {% else %}
+      Push на сервері ще не готовий.
+      {% endif %}
+    </p>
+    <button type="button" class="btn-secondary btn-compact" id="push-btn" {% if not push_enabled %}disabled{% endif %}>
       {% if push_enabled %}Увімкнути{% else %}Н/д{% endif %}
     </button>
   </section>
@@ -251,7 +249,10 @@
     >
       <div class="editorial-list" data-editorial-list="threads">
       {% if threads_items %}
+      {% set threads_open = threads_items | rejectattr('done') | list %}
+      {% if threads_open %}
       <p class="step">Threads · Копіювати → встав · познач «Вже запостив»</p>
+      {% endif %}
       {% for item in threads_items %}
       {% include "editorial_card.html" %}
       {% endfor %}
@@ -274,7 +275,10 @@
     >
       <div class="editorial-list" data-editorial-list="telegram">
       {% if tg_items %}
+      {% set tg_open = tg_items | rejectattr('done') | list %}
+      {% if tg_open %}
       <p class="step">Telegram · Копіювати → встав у канал</p>
+      {% endif %}
       {% for item in tg_items %}
       {% include "editorial_card.html" %}
       {% endfor %}

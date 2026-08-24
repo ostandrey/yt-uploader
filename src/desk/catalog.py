@@ -408,6 +408,32 @@ def _raw_editorial_items() -> list[dict[str, Any]]:
     return [apply_status(row, normalize_status(row)) for row in source]
 
 
+_KIND_CHIP_UA = {
+    "opinion": "opinion",
+    "news": "новина",
+    "новина": "новина",
+    "numbers": "цифри",
+    "snapshot": "зріз",
+    "зріз ринку": "зріз",
+    "зріз": "зріз",
+    "reflection": "reflection",
+    "recap": "recap",
+    "context": "контекст",
+    "контекст": "контекст",
+    "question": "питання",
+    "poll": "опит",
+    "digest": "дайджест",
+    "note": "нотатка",
+}
+
+
+def kind_chip_label(kind: str) -> str:
+    raw = str(kind or "note").strip()
+    if not raw:
+        return "нотатка"
+    return _KIND_CHIP_UA.get(raw.lower(), raw)
+
+
 def _enrich_editorial(item: dict[str, Any], now: datetime) -> dict[str, Any]:
     from src.desk.items import DESK_POSTED, DESK_SKIPPED, apply_status, normalize_status
 
@@ -439,6 +465,7 @@ def _enrich_editorial(item: dict[str, Any], now: datetime) -> dict[str, Any]:
     row.update(
         {
             "kind": kind,
+            "kind_label": kind_chip_label(kind),
             "tab": tab,
             "day": _day_key(created_at),
             "status": status,
@@ -588,6 +615,7 @@ def editorial_public_row(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": item.get("id"),
         "kind": item.get("kind"),
+        "kind_label": item.get("kind_label") or kind_chip_label(str(item.get("kind") or "")),
         "label": item.get("label"),
         "text": item.get("text"),
         "tab": item.get("tab"),
@@ -862,17 +890,15 @@ def desk_tabs(pack: dict | None, editorial: list[dict[str, Any]]) -> list[dict[s
     """Tab strip: unpublished counts (open work), not only НОВЕ."""
     from src.desk.items import DESK_QUEUED, normalize_status
 
-    threads_kinds = {"opinion", "question", "recap", "reflection", "snapshot", "news", "numbers"}
-    telegram_kinds = {"context", "poll", "digest"}
     threads_new = sum(
         1
         for item in editorial
-        if normalize_status(item) == DESK_QUEUED and item.get("kind") in threads_kinds
+        if normalize_status(item) == DESK_QUEUED and item.get("tab") != "telegram"
     )
     telegram_new = sum(
         1
         for item in editorial
-        if normalize_status(item) == DESK_QUEUED and item.get("kind") in telegram_kinds
+        if normalize_status(item) == DESK_QUEUED and item.get("tab") == "telegram"
     )
     short_new = 0
     tiktok_new = 0

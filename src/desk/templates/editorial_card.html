@@ -4,19 +4,21 @@
   data-status="{{ item.status or ('desk_posted' if item.done else 'desk_queued') }}"
   id="item-{{ item.id }}"
 >
-  {% if item.kind %}
-  <span class="editorial-kind">{{ item.kind }}</span>
-  {% endif %}
-  <div class="editorial-meta">
-    <p class="editorial-label">{{ item.label }}</p>
+  <div class="editorial-top">
+    {% if item.kind %}
+    <span class="editorial-kind">{{ item.kind_label or item.kind }}</span>
+    {% endif %}
     <span class="editorial-badge badge-{{ item.badge_kind }}">{{ item.badge }}{% if item.age %} · {{ item.age }}{% endif %}</span>
   </div>
+  {% if item.label and not item.done %}
+  <p class="editorial-label">{{ item.label }}</p>
+  {% endif %}
   {% if item.snip %}
   <p class="editorial-snip">{{ item.snip }}</p>
   {% endif %}
   <textarea readonly data-select data-editorial="{{ item.id }}">{{ item.text }}</textarea>
   <div class="editorial-actions">
-    <button type="button" class="btn-secondary" data-copy-text="{{ item.id }}">Копіювати</button>
+    <button type="button" class="btn-primary" data-copy-text="{{ item.id }}">Копіювати</button>
     {% if item.status != 'desk_skipped' %}
     <button type="button" class="btn-ghost btn-compact" data-editorial-skip="{{ item.id }}">Пропустити</button>
     {% endif %}
