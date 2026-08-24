@@ -75,9 +75,7 @@
     if (openEl) openEl.textContent = String(pageStamp.open);
     if (stamp.next_check) {
       const next = document.getElementById("ops-next");
-      const hint = document.getElementById("desk-hint");
       if (next) next.textContent = stamp.next_check;
-      if (hint) hint.textContent = stamp.next_check;
     }
   }
 
@@ -106,7 +104,11 @@
     const snip = item.snip
       ? `<p class="editorial-snip">${escapeHtml(item.snip)}</p>`
       : "";
+    const kind = item.kind
+      ? `<span class="editorial-kind">${escapeHtml(item.kind)}</span>`
+      : "";
     return `<article class="${classes.join(" ")}" data-editorial-id="${escapeHtml(item.id)}" data-status="${escapeHtml(status)}" id="item-${escapeHtml(item.id)}">
+  ${kind}
   <div class="editorial-meta">
     <p class="editorial-label">${escapeHtml(item.label)}</p>
     <span class="editorial-badge badge-${escapeHtml(item.badge_kind || "old")}">${escapeHtml(item.badge || "")}${age}</span>
@@ -125,8 +127,14 @@
 </article>`;
   }
 
-  function paintEditorialLists(items) {
+  function paintEditorialLists(items, emptyCopy) {
     const byTab = { threads: [], telegram: [] };
+    const statusRank = (item) => {
+      const status = item.status || (item.done ? "desk_posted" : "desk_queued");
+      if (status === "desk_queued") return 0;
+      if (status === "desk_posted") return 1;
+      return 2;
+    };
     (items || []).forEach((item) => {
       const tab = item.tab === "telegram" ? "telegram" : "threads";
       byTab[tab].push(item);
@@ -135,9 +143,19 @@
       const host = document.querySelector(`[data-editorial-list="${tab}"]`);
       const panel = document.querySelector(`[data-panel="${tab}"]`);
       if (!host) return;
-      const list = byTab[tab];
+      const list = byTab[tab].slice().sort((a, b) => statusRank(a) - statusRank(b));
       if (!list.length) {
-        host.innerHTML = `<div class="empty-panel"><p class="empty-title">Немає постів для ${tab === "threads" ? "Threads" : "Telegram"}</p><p class="empty-body">Оновиться автоматично після job.</p></div>`;
+        const fallbackTitle =
+          tab === "threads" ? "Немає постів для Threads" : "Немає постів для Telegram";
+        const fromApi = emptyCopy && emptyCopy[tab] ? emptyCopy[tab] : null;
+        const title = escapeHtml((fromApi && fromApi.title) || fallbackTitle);
+        const body = escapeHtml(
+          (fromApi && fromApi.body) ||
+            `Оновиться після наступного job · ${
+              document.getElementById("ops-next")?.textContent || "чекай перевірку"
+            }`
+        );
+        host.innerHTML = `<div class="empty-panel"><p class="empty-title">${title}</p><p class="empty-body">${body}</p></div>`;
         if (panel) panel.setAttribute("data-has-content", "0");
         return;
       }
@@ -180,7 +198,7 @@
     });
     if (!res.ok) throw new Error("editorial");
     const data = await res.json();
-    paintEditorialLists(data.items || []);
+    paintEditorialLists(data.items || [], data.empty || null);
     if (data.stamp) applyStampUi(data.stamp);
     toast("Desk оновлено");
   }
@@ -849,12 +867,11 @@
           }
           collapsePushCard(true);
           if (statusText) {
-            statusText.textContent =
-              `Увімкнено (standalone=${isStandalone}). Тест: спочатку local, потім server.`;
+            statusText.textContent = "Увімкнено. Тап по зеленій точці біля бренду — знову показати.";
           }
         } else {
           collapsePushCard(false);
-          btn.textContent = "Увімкнути сповіщення";
+          btn.textContent = "Увімкнути";
           btn.dataset.mode = "subscribe";
           if (card) card.classList.remove("is-on");
           if (dot) {
@@ -863,8 +880,9 @@
             dot.title = "Push: вимкнений";
           }
           if (statusText) {
-            statusText.textContent =
-              `Allow → підписка. standalone=${isStandalone}, permission=${Notification.permission}`;
+            statusText.textContent = isIos() && !isStandalone
+              ? "iPhone: спочатку ярлик Home Screen, потім Увімкнути."
+              : "Один раз «Увімкнути». Далі desk оновлює підписку сам.";
           }
         }
       } catch (err) {

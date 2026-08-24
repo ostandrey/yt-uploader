@@ -34,8 +34,20 @@ def polish_ig_caption(caption: str, article_text: str) -> str:
     return f"{body}\n\n{tags}".strip()
 
 
-def polish_carousel_caption(caption: str, article_text: str, *, source: str = "") -> str:
+def polish_carousel_caption(
+    caption: str,
+    article_text: str,
+    *,
+    source: str = "",
+    context_slide: str = "",
+) -> str:
+    from src.content.copy_overlap import shares_lead
+
     body = _strip_hashtag_lines(naturalize_text(caption))
+    if context_slide and shares_lead(body, [context_slide], threshold=0.55):
+        # Keep hook line only — CONTEXT lives on the slide, not in the caption.
+        first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
+        body = first
     if CAROUSEL_CTA not in body:
         body = f"{body}\n\n{CAROUSEL_CTA}".strip()
     if source and "Source:" not in body:

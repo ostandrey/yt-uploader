@@ -68,6 +68,8 @@ def _load_state(tz_name: str, path: Optional[Path] = None) -> dict[str, Any]:
         "numbers": 0,
         "numbers_day": "",
         "story_quote": 0,
+        "opinion_entities": [],
+        "digest_titles": [],
     }
 
 
@@ -445,6 +447,13 @@ def after_telegram_post(
     question_cap = int(cfg.get("question_per_week", 3))
     seed = sum(ord(c) for c in str(article.get("hash") or article.get("title") or "x"))
     want_opinion = seed % 2 == 0
+    entity = _norm_entity(_event_entity(article))
+    used_entities = {
+        _norm_entity(str(x)) for x in (state.get("opinion_entities") or []) if str(x).strip()
+    }
+    # Diversity: at most one opinion per entity/topic per week.
+    if entity and entity in used_entities:
+        want_opinion = False
     if want_opinion and state.get("opinion", 0) < opinion_cap and tier in {"strong", "breaking", "insight"}:
         text = editorial_copy.opinion_hook(article)
         if text:
@@ -457,6 +466,10 @@ def after_telegram_post(
                 article_hash=str(article.get("hash") or ""),
             )
             state["opinion"] = int(state.get("opinion", 0)) + 1
+            entities = list(state.get("opinion_entities") or [])
+            if entity and entity not in {_norm_entity(str(x)) for x in entities}:
+                entities.append(entity)
+            state["opinion_entities"] = entities
             queued.append("opinion")
     elif state.get("question", 0) < question_cap and tier in {"strong", "breaking", "insight"}:
         text = editorial_copy.question_post(article)
@@ -474,6 +487,26 @@ def after_telegram_post(
 
     _save_state(state)
     return {"queued": queued}
+
+
+def _filter_recap_items(
+    items: list[dict[str, Any]],
+    digest_titles: list[str],
+) -> list[dict[str, Any]]:
+    """Drop Monday digest top-3 stories from Friday Threads recap when alternatives exist."""
+    blocked = [str(t).strip() for t in (digest_titles or [])[:3] if str(t).strip()]
+    if not blocked:
+        return items
+    kept: list[dict[str, Any]] = []
+    for item in items:
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        if any(titles_similar(title, ban) for ban in blocked):
+            continue
+        kept.append(item)
+    # Prefer non-digest stories even if fewer than 5; empty → keep original.
+    return kept if kept else items
 
 
 def post_weekly_digest(
@@ -495,6 +528,11 @@ def post_weekly_digest(
         return {"posted": False, "dry_run": True, "text": text}
     publisher.post_to_channel(text)
     state["digest"] = 1
+    state["digest_titles"] = [
+        str(item.get("title") or "").strip()
+        for item in items[-5:]
+        if str(item.get("title") or "").strip()
+    ][:3]
     _save_state(state)
     append_event(kind="digest", title="Weekly digest")
     try:
@@ -519,6 +557,7 @@ def post_threads_recap(
         recap_result = {"posted": False, "reason": "already_this_week", "dry_run": dry_run}
     else:
         items = events_since(7, kinds={"telegram", "short"}, tz_name=tz_name)
+        items = _filter_recap_items(items, list(state.get("digest_titles") or []))
         events_list = format_events_list(items, limit=5)
         text = editorial_copy.weekly_recap(events_list)
         if not text:

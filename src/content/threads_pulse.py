@@ -8,7 +8,7 @@ Must not reuse Telegram headline/bullet wording — but MUST still state a fact.
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Optional
 
 from src.content.copy_overlap import shares_lead, split_sentences
 from src.content.naturalize import naturalize_text
@@ -142,21 +142,52 @@ def _concrete_fact(title: str, summary: str, bullets: List[str]) -> str:
 
 
 def _angle_color(title: str, summary: str, fact: str) -> str:
-    """Optional second line — never ships alone without a fact."""
+    """Trader-aware second line — must NOT restate TG Context (background/process)."""
     blob = f"{title}. {summary}"
     dated = _DATE.search(blob)
     if dated:
-        return _finish(f"{dated.group(0).strip()} is on the calendar — wait for the primary print")
+        return _finish(
+            f"Positioning note: {dated.group(0).strip()} is a calendar mark, not a filled trade"
+        )
     money = _MONEY.search(blob)
     if money:
-        return _finish(f"{money.group(0).strip()} is the figure in the story, not a forecast")
+        return _finish(
+            f"Do not size off {money.group(0).strip()} alone — wait for the next confirming print"
+        )
     agency = _AGENCY.search(blob)
     if agency and fact:
         name = agency.group(0)
         if name.lower() in {"the fed", "fed"}:
             name = "Fed"
-        return _finish(f"{name} is named — treat the headline as a marker until the document is public")
-    return ""
+        return _finish(
+            f"{name} in the headline is not a position — the next primary document is"
+        )
+    return _finish("Treat the headline as a marker until the primary document is public")
+
+
+def _recent_context_bans(article: Dict) -> list[str]:
+    """If TG Context already covered this story, ban that wording from Threads news."""
+    try:
+        from src.content.editorial_log import load_log
+        from src.content.story_dedupe import titles_similar
+    except Exception:
+        return []
+    title = str(article.get("title") or "")
+    article_hash = str(article.get("hash") or "")
+    bans: list[str] = []
+    for item in reversed(load_log()[-40:]):
+        if item.get("kind") != "context":
+            continue
+        same_hash = article_hash and item.get("hash") == article_hash
+        same_title = title and titles_similar(title, str(item.get("title") or ""))
+        if not (same_hash or same_title):
+            continue
+        for key in ("summary", "title"):
+            value = str(item.get(key) or "").strip()
+            if value and len(value) > 12:
+                bans.append(value)
+        break
+    return bans
 
 
 def _distinct_line(candidates: List[str], banned: list[str]) -> str:
@@ -200,10 +231,12 @@ def build_threads_news_pulse(
     tier: str = "strong",
     seed: str = "",
     question_rate: float = 0.0,
+    extra_banned: Optional[List[str]] = None,
 ) -> tuple[str, PulseVariant]:
     """
     Build a plain-text Threads news flash (no video, no YouTube CTA).
     Always leads with a concrete story fact — never philosophy-only.
+    Must add a trader angle TG Context does not cover (not restating background).
     """
     del question_rate
     seed = seed or article.get("hash") or article.get("title", "")
@@ -215,19 +248,27 @@ def build_threads_news_pulse(
     if first_line and not first_line.endswith("."):
         first_line += "."
     banned = _tg_banned(article, title, bullets, first_line)
+    banned.extend(_recent_context_bans(article))
+    if extra_banned:
+        banned.extend([b for b in extra_banned if b and len(b) > 12])
     fact = _concrete_fact(title, summary, bullets)
     if not fact:
         return "", variant
 
     body = _body_line(title, summary, bullets, banned, fact)
     color = _angle_color(title, summary, fact)
+    # Prefer the trader angle over a body line that only restates TG Context.
+    if body and shares_lead(body, banned):
+        body = ""
     takeaway = build_market_takeaway(article)
+    if takeaway and shares_lead(takeaway, banned):
+        takeaway = ""
 
     lines: List[str] = []
 
     if variant == "breaking_lead":
         lines.append(fact)
-        lines.append(body or color)
+        lines.append(color or body)
     elif variant == "prose":
         lines.append(fact)
         if body and body.lower() != fact.lower():
@@ -236,19 +277,21 @@ def build_threads_news_pulse(
             lines.append(color)
     elif variant == "takeaway":
         lines.append(fact)
-        extra = takeaway if takeaway and not shares_lead(takeaway, banned) else (body or color)
+        extra = takeaway if takeaway else (color or body)
         if extra and extra.lower() != fact.lower():
             lines.append(extra)
     elif variant == "context":
         lines.append(fact)
-        lines.append(body or color)
+        lines.append(color or body)
     elif variant == "minimal":
         lines.append(fact)
         if color:
             lines.append(color)
     else:
         lines.append(fact)
-        if body and body.lower() != fact.lower():
+        if color:
+            lines.append(color)
+        elif body and body.lower() != fact.lower():
             lines.append(body)
 
     # Drop empties / dupes while keeping order.
@@ -261,15 +304,24 @@ def build_threads_news_pulse(
         seen.add(key)
         clean.append(line.strip())
 
+    # Hard differentiator: fact + trader angle (never Context restatement alone).
+    if len(clean) < 2 and color and color.lower() != fact.lower():
+        clean = [fact, color]
+
     text = "\n\n".join(clean)
     if shares_lead(text, banned) or not _has_substance(text, fact):
-        # Soft rewrite: keep the fact, add one cautious color line if regulatory.
         text = fact
-        if color and color.lower() != fact.lower():
+        if color and color.lower() != fact.lower() and not shares_lead(color, banned):
             text = f"{fact}\n\n{color}"
 
     if not _has_substance(text, fact):
         return "", variant
+    # Still overlapping Context → soft fail to fact+angle only if angle is clean.
+    if shares_lead(text, banned):
+        if color and not shares_lead(color, banned):
+            text = f"{fact}\n\n{color}"
+        else:
+            return "", variant
 
     if _is_regulatory(article):
         tag = _regulatory_tag(article)

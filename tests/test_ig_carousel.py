@@ -115,6 +115,32 @@ def test_render_four_slides(tmp_path: Path):
     assert carousel_caption({"title": "Fed holds rates"})
 
 
+def test_carousel_caption_avoids_context_slide_echo():
+    content = {
+        "title": "SEC delays spot ETH ETF decision again",
+        "description": (
+            "The commission pushed the deadline after requesting more issuer docs. "
+            "Staff asked for clearer custody language."
+        ),
+        "carousel_caption": (
+            "The commission pushed the deadline after requesting more issuer docs. "
+            "Staff asked for clearer custody language.\n\nSwipe for context."
+        ),
+    }
+    slides = build_what_moved(content)
+    context = next(
+        (s["title"] for s in slides if s.get("kind") == "body"),
+        "",
+    )
+    caption = carousel_caption(content)
+    assert context
+    assert "Swipe for context" in caption
+    # If CONTEXT leaked into caption wholesale, first clause would repeat.
+    first_ctx = context.split(".")[0].strip()
+    if len(first_ctx) > 40:
+        assert first_ctx not in caption
+
+
 def test_context_prefers_novel_facts_not_thin_stub():
     """Headline-overlap used to kill long lines and leave a 6-word CONTEXT stub."""
     slides = build_what_moved(

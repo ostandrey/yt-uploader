@@ -4,6 +4,9 @@
   data-status="{{ item.status or ('desk_posted' if item.done else 'desk_queued') }}"
   id="item-{{ item.id }}"
 >
+  {% if item.kind %}
+  <span class="editorial-kind">{{ item.kind }}</span>
+  {% endif %}
   <div class="editorial-meta">
     <p class="editorial-label">{{ item.label }}</p>
     <span class="editorial-badge badge-{{ item.badge_kind }}">{{ item.badge }}{% if item.age %} · {{ item.age }}{% endif %}</span>

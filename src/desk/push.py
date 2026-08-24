@@ -315,9 +315,18 @@ def notify_desk_push(
 
 
 def _alert_push_miss(title: str, body: str, result: dict[str, Any]) -> None:
-    """Operator ping when desk push did not land (silent fail otherwise)."""
+    """Owner TG only when every subscribed delivery failed.
+
+    no_subscriptions is normal until desk push is enabled — log only, no TG spam.
+    """
     reason = str(result.get("reason") or "")
-    if reason not in {"no_subscriptions", "all_failed"}:
+    if reason == "no_subscriptions":
+        log.info(
+            "Desk web push: no subscriptions yet (title=%s)",
+            (title or "")[:60],
+        )
+        return
+    if reason != "all_failed":
         return
     # Rate-limit: every editorial miss would otherwise spam Telegram.
     try:

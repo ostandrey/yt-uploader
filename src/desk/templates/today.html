@@ -48,7 +48,7 @@
       <h2>Сповіщення</h2>
       <p id="push-status-text">
         {% if push_enabled %}
-        Один раз «Увімкнути». Після деплою просто відкрий Desk — підписка оновиться сама. Telegram і так пише.
+        Один раз «Увімкнути». Далі desk оновлює підписку сам.
         {% else %}
         Push на сервері ще не готовий.
         {% endif %}
@@ -69,6 +69,7 @@
       data-tab="{{ tab.id }}"
       id="tab-{{ tab.id }}"
       aria-selected="{% if loop.first %}true{% else %}false{% endif %}"
+      aria-controls="panel-{{ tab.id }}"
       tabindex="{% if loop.first %}0{% else %}-1{% endif %}"
       {% if tab.badge %}data-count="{{ tab.badge }}"{% endif %}
     >
@@ -77,9 +78,6 @@
     </button>
     {% endfor %}
   </nav>
-  {% if next_check %}
-  <p class="desk-hint" id="desk-hint">{{ next_check }}</p>
-  {% endif %}
 
   <main class="desk-main" id="desk-main">
     <textarea id="clip-fallback" class="clip-fallback" aria-hidden="true" readonly></textarea>

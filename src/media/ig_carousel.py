@@ -389,12 +389,31 @@ def build_what_moved(content: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def carousel_caption(content: dict[str, Any]) -> str:
+    from src.content.copy_overlap import shares_lead
+
     override = naturalize_text(str(content.get("carousel_caption") or "")).strip()
+    context_slide = ""
+    for slide in build_what_moved(content):
+        if slide.get("kind") == "body" or str(slide.get("kicker") or "").lower() == "context":
+            context_slide = naturalize_text(str(slide.get("title") or ""))
+            break
+
     if override:
+        # Caption must not restate the CONTEXT slide body.
+        if context_slide and shares_lead(override, [context_slide], threshold=0.55):
+            title = _scrub(content.get("title") or "")
+            source = _source_label(content)
+            lines = [title, "Swipe for context."]
+            if source:
+                lines.append(f"Source: {source}")
+            lines.append("#bitcoin #crypto #cryptonews #etf")
+            return "\n".join(lines)[:2200]
         return _URL.sub("", override).strip()[:2200]
     title = _scrub(content.get("title") or "")
     desc = _sentences(content.get("description") or "", 2)
     body = " ".join(desc) if desc else ""
+    if body and context_slide and shares_lead(body, [context_slide], threshold=0.55):
+        body = ""
     source = _source_label(content)
     lines = [title]
     if body and body.lower() not in title.lower() and _distinct_from(body, title):

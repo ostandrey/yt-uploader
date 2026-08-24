@@ -236,3 +236,24 @@ def test_numbers_week_cap(tmp_path, monkeypatch):
         type("P", (), {})(), _numbers_config(), dry_run=True
     )
     assert result["reason"] == "week_cap"
+
+
+def test_filter_recap_drops_digest_top3():
+    from src.content.editorial_jobs import _filter_recap_items
+
+    items = [
+        {"title": "BlackRock ETF inflows hit record"},
+        {"title": "SEC delays ETH decision"},
+        {"title": "Fed holds rates steady"},
+        {"title": "Solana ETF filing advances"},
+        {"title": "Coinbase lists new pair"},
+    ]
+    digest = [
+        "BlackRock ETF inflows hit record",
+        "SEC delays ETH decision",
+        "Fed holds rates steady",
+    ]
+    kept = _filter_recap_items(items, digest)
+    titles = [i["title"] for i in kept]
+    assert "Solana ETF filing advances" in titles
+    assert "BlackRock ETF inflows hit record" not in titles

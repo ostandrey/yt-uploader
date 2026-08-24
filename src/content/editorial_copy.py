@@ -187,6 +187,11 @@ Weekly events list:
 
 
 _CONTRAST = re.compile(r"\b(but|still|yet|meanwhile)\b", re.I)
+_JUDGMENT = re.compile(
+    r"\b(mattered|matter|noise|procedural|moved|tape|print|calendar|"
+    r"outcome|signal|not the story|hard number|process,?\s+not)\b",
+    re.I,
+)
 _HASH_OR_EMOJI = re.compile(
     r"#\w+|[\U0001F300-\U0001FAFF]|[\U0001F1E0-\U0001F1FF]|[\u2600-\u27BF]|[\uFE0F]"
 )
@@ -209,6 +214,10 @@ def _reflection_ok(text: str, banned: list[str]) -> bool:
         return False
     contrast_src = sentences[4] if len(sentences) >= 5 else text
     if not _CONTRAST.search(contrast_src):
+        return False
+    # Judgment gate: later sentences must imply something not restatable as a fact list.
+    judgment_src = " ".join(sentences[4:])
+    if not _JUDGMENT.search(judgment_src):
         return False
     if shares_lead(text, banned, threshold=REFLECTION_OVERLAP):
         return False
@@ -245,9 +254,9 @@ Voice: dry, wire-service tone with light editorial judgment. Active voice. No em
 Rules:
 - Sentences 1-2: state the top story using ONLY this fact: "{top_entity}: {top_fact}". Do not add numbers or claims not in this fact.
 - Sentences 3-4: state the secondary story using ONLY this fact: "{secondary_entity}: {secondary_fact}". Do not add numbers or claims not in this fact.
-- Sentence 5: contrast what moved versus what was procedural or noise. Must contain one of: but, still, yet, meanwhile.
+- Sentence 5: contrast what moved versus what was procedural or noise. Must contain one of: but, still, yet, meanwhile. Must state a judgment/implication that is NOT just restating either fact (e.g. what mattered vs noise). If you only list facts again, fail.
 - Sentence 6 (optional): one forward-looking sentence about what to watch. Do not invent any date, number, or event not already known.
-Forbidden phrases: "markets are watching", "traders are reacting", "this is a developing story", "bullish", "bearish", "what do you think", "crypto fam", "NFA", "DYOR".
+Forbidden phrases: "markets are watching", "traders are reacting", "this is a developing story", "bullish", "bearish", "what do you think", "crypto fam", "NFA", "DYOR", "together suggest", "which together".
 Do not invent any number, date, or quote not present in the facts given above.
 Do not ask a question. Do not use hashtags or emoji.
 Output only the sentences, nothing else."""
@@ -284,9 +293,10 @@ def telegram_context(article: dict[str, Any]) -> str:
 - Max 600 characters.
 - Header: Context:
 - 4-6 sentences only.
-- Structure: background that is NOT in the breaking post (1-2) then what led here (1-2) then what to watch next (1-2).
+- Structure: background that is NOT in the breaking post (1-2) then what led here (1-2) then what to watch next on process/docket (1-2).
 - Do NOT repeat the article title.
 - Do NOT reuse the lead sentence of the summary. Paraphrase. The operator already posted the breaking item.
+- Do NOT write trader positioning, "don't size off", or "don't trade the headline" — that angle belongs on Threads news, not TG Context.
 - No price predictions. No bullish/bearish. Facts and process only.
 - No hashtags. English. No em dashes.
 

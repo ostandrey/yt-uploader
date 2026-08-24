@@ -83,6 +83,7 @@ def test_weekly_reflection_fallback(monkeypatch):
     assert "BlackRock" in text or "$4.6" in text
     assert "CFTC" in text
     assert re.search(r"\b(but|still|yet|meanwhile)\b", text, re.I)
+    assert re.search(r"\b(mattered|noise|procedural|moved|tape|print|calendar|outcome)\b", text, re.I)
     assert len(text) <= 700
     assert "#" not in text
     assert "?" not in text

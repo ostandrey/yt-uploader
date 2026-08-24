@@ -441,7 +441,19 @@ def api_desk_editorial(request: Request):
         catalog.editorial_public_row(item)
         for item in catalog.load_editorial_items(scope=scope)
     ]
-    return JSONResponse({"items": items, "stamp": catalog.desk_stamp()})
+    stamp = catalog.desk_stamp()
+    return JSONResponse({
+        "items": items,
+        "stamp": stamp,
+        "empty": {
+            "threads": catalog.empty_panel_copy(
+                "threads", next_check=str(stamp.get("next_check") or "")
+            ),
+            "telegram": catalog.empty_panel_copy(
+                "telegram", next_check=str(stamp.get("next_check") or "")
+            ),
+        },
+    })
 
 
 @app.post("/api/editorial/done")
